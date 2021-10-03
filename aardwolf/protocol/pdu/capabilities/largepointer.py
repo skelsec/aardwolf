@@ -4,6 +4,7 @@ import enum
 class LARGE_POINTER(enum.Enum):
 	FLAG_96x96 = 0x00000001 #Mouse pointer shapes of up to 96x96 pixels in size are supported.
 	FLAG_384x384 = 0x00000002 #Mouse pointer shapes of up to 384x384 pixels in size, and the Fast-Path Large Pointer Update (section 2.2.9.1.2.1.11), are supported.
+	FLAG_3_UNK = 0x00000003
 
 class TS_LARGE_POINTER_CAPABILITYSET:
 	def __init__(self):
