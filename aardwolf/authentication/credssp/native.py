@@ -108,7 +108,7 @@ class CredSSPAuth:
 									'password'   : self.cred.password.encode('utf-16-le'),
 								}							 
 								 
-															
+										
 							res = TSPasswordCreds(creds)
 							res = TSCredentials({'credType': 1, 'credentials': res.dump()})
 							sealedMessage, signature = await self.auth_ctx.encrypt(res.dump(), self.seqno) #seq number must be incremented here..

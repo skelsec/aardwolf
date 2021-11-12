@@ -1,11 +1,13 @@
 
 import asyncio
 import traceback
+import typing
 
 from asn1tools.codecs import restricted_utc_time_from_datetime
 
 from aardwolf.protocol.T124.userdata.constants import ChannelOption
 from aardwolf.protocol.T128.share import TS_SHARECONTROLHEADER, PDUTYPE
+from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
 
 class Channel:
 	def __init__(self, name, options = ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP):
@@ -111,7 +113,16 @@ class Channel:
 					datacontrol_hdr.compressedLength = 0
 					hdrs += datacontrol_hdr.to_bytes()
 				if sec_hdr is not None:
-					hdrs += sec_hdr.to_bytes()
+					sec_hdr = typing.cast(TS_SECURITY_HEADER, sec_hdr)
+					if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
+						data = hdrs+data
+						# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/9791c9e2-e5be-462f-8c23-3404c4af63b3
+						enc_data = self.connection.cryptolayer.client_enc(data) 
+						checksum = self.connection.cryptolayer.calc_mac(data)
+						data = checksum + enc_data
+						hdrs = sec_hdr.to_bytes()
+					else:
+						hdrs += sec_hdr.to_bytes()
 				userdata = hdrs + data
 				data_wrapper = {
 				'initiator': self.connection._initiator, 

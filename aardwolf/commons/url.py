@@ -12,7 +12,7 @@ import copy
 
 
 class RDPConnectionURL:
-	def __init__(self, connection_url):
+	def __init__(self, connection_url, target = None, cred = None, proxy = None):
 		self.connection_url = connection_url
 		
 		#credential
@@ -23,6 +23,7 @@ class RDPConnectionURL:
 		self.secret = None
 		self.is_anonymous = None
 		self.auth_settings = {}
+		self.cred = cred
 
 		#target
 		self.dialect = None
@@ -37,10 +38,13 @@ class RDPConnectionURL:
 		self.path = None
 		self.compression = False
 
-		#proxy
-		self.proxy= None
+		self.target = target
 
-		self.parse()
+		#proxy
+		self.proxy = proxy
+
+		if self.connection_url is not None:
+			self.parse()
 
 	def get_connection(self, iosettings):
 		tio = copy.deepcopy(iosettings)
@@ -70,9 +74,14 @@ class RDPConnectionURL:
 		return RDPFile.from_RDPurl(self)
 
 	def get_proxy(self):
-		return self.proxy
+		if self.proxy is not None:
+			copy.deepcopy(self.proxy)
+		return None
 
 	def get_target(self):
+		if self.target is not None:
+			return copy.deepcopy(self.target)
+
 		if self.ip is not None and self.hostname is None:
 			try:
 				ipaddress.ip_address(self.ip)
@@ -94,6 +103,8 @@ class RDPConnectionURL:
 		return t
 
 	def get_credential(self):
+		if self.cred is not None:
+			return copy.deepcopy(self.cred)
 		return RDPCredential(
 			username = self.username,
 			domain = self.domain, 
