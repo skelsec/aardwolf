@@ -10,6 +10,9 @@ import asn1tools
 from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.network.selector import NetworkSelector
 from aardwolf.commons.credential import RDPCredentialsSecretType, RDPAuthProtocol
+from aardwolf.commons.cryptolayer import RDPCryptoLayer
+from aardwolf.protocol import x224
+from aardwolf.protocol.T124.userdata.serversecuritydata import TS_UD_SC_SEC1
 from aardwolf.transport.ssl import SSLClientTunnel
 from aardwolf.network.tpkt import TPKTNetwork
 from aardwolf.network.x224 import X224Network
@@ -24,7 +27,7 @@ from aardwolf.protocol.T124.userdata.clientcoredata import TS_UD_CS_CORE
 from aardwolf.protocol.T124.userdata.clientsecuritydata import TS_UD_CS_SEC
 from aardwolf.protocol.T124.userdata.clientnetworkdata import TS_UD_CS_NET, CHANNEL_DEF
 from aardwolf.protocol.T124.userdata.clientclusterdata import TS_UD_CS_CLUSTER
-from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
+from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
 from aardwolf.protocol.T125.infopacket import *
 from aardwolf.protocol.T125.extendedinfopacket import *
 from aardwolf.protocol.T125.MCSPDU_ver_2 import MCSPDU_ver_2
@@ -34,6 +37,8 @@ from aardwolf.protocol.T125.synchronizepdu import *
 from aardwolf.protocol.T125.controlpdu import *
 from aardwolf.protocol.T125.fontlistpdu import *
 from aardwolf.protocol.T125.inputeventpdu import *
+from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
+
 
 from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FASTPATH_FRAGMENT
 from aardwolf.commons.queuedata import *
@@ -65,6 +70,8 @@ class RDPConnection:
 
 		self.x224_connection_reply = None
 		self.x224_protocol = None
+
+		self.__server_connect_pdu:TS_SC = None # serverconnectpdu message from server (holds security exchange data)
 		
 		self._initiator = None
 		self.__channel_id_lookup = {}
@@ -87,6 +94,7 @@ class RDPConnection:
 		self.__x224_reader_task = None
 		self.client_x224_flags = 0
 		self.client_x224_supported_protocols = SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
+		self.cryptolayer:RDPCryptoLayer = None
 
 	
 	async def terminate(self):
@@ -169,30 +177,39 @@ class RDPConnection:
 					self.client_x224_flags = 0
 					self.client_x224_supported_protocols = SUPP_PROTOCOLS.SSL
 					
-			self.x224_connection_reply, err = await self._x224net.client_negotiate(self.client_x224_flags, self.client_x224_supported_protocols)
+			connection_accepted_reply, err = await self._x224net.client_negotiate(self.client_x224_flags, self.client_x224_supported_protocols)
 			if err is not None:
 				raise err
 			
-			self.x224_connection_reply = typing.cast(RDP_NEG_RSP, self.x224_connection_reply)
-			# if the server requires SSL/TLS connection as indicated in the 'selectedProtocol' flags
-			# we switch here. SSL and HYBRID/HYBRID_EX authentication methods all require this switch
-			
-			self.x224_protocol = self.x224_connection_reply.rdpNegData.selectedProtocol
-			self.x224_flag = self.x224_connection_reply.rdpNegData.flags
-			#print(self.x224_protocol)
-			#print(self.x224_flag)
-			if SUPP_PROTOCOLS.SSL in self.x224_protocol or SUPP_PROTOCOLS.HYBRID in self.x224_protocol or SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
-				_, err = await self.__tpkgnet.switch_transport(SSLClientTunnel)
-				if err is not None:
-					raise err
+			if connection_accepted_reply.rdpNegData is not None:
+				# newer RDP protocol was selected
 
-			# if the server expects HYBRID/HYBRID_EX authentication we do that here
-			# This is basically credSSP
-			if SUPP_PROTOCOLS.HYBRID in self.x224_protocol or SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
-				_, err = await self.credssp_auth()
-				if err is not None:
-					raise err
-			
+				self.x224_connection_reply = typing.cast(RDP_NEG_RSP, connection_accepted_reply.rdpNegData)
+				# if the server requires SSL/TLS connection as indicated in the 'selectedProtocol' flags
+				# we switch here. SSL and HYBRID/HYBRID_EX authentication methods all require this switch
+				
+				
+				self.x224_protocol = self.x224_connection_reply.selectedProtocol
+				self.x224_flag = self.x224_connection_reply.flags
+				#print(self.x224_protocol)
+				#print(self.x224_flag)
+				if SUPP_PROTOCOLS.SSL in self.x224_protocol or SUPP_PROTOCOLS.HYBRID in self.x224_protocol or SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
+					_, err = await self.__tpkgnet.switch_transport(SSLClientTunnel)
+					if err is not None:
+						raise err
+
+				# if the server expects HYBRID/HYBRID_EX authentication we do that here
+				# This is basically credSSP
+				if SUPP_PROTOCOLS.HYBRID in self.x224_protocol or SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
+					_, err = await self.credssp_auth()
+					if err is not None:
+						raise err
+
+			else:
+				# old RDP protocol is used
+				self.x224_protocol = SUPP_PROTOCOLS.RDP
+				self.x224_flag = None
+
 			# initializing the parsers here otherwise they'd waste time on connections that did not get to this point
 			# not kidding, this takes ages
 			self.__t125_ber_codec = asn1tools.compile_string(MCSPDU_ver_2, 'ber')
@@ -216,6 +233,12 @@ class RDPConnection:
 			_, err = await self.__join_channels()
 			if err is not None:
 				raise err
+			
+			if self.x224_protocol == SUPP_PROTOCOLS.RDP:
+				# key exchange here because we use old version of the protocol
+				_, err = await self.__security_exchange()
+				if err is not None:
+					raise err
 
 			_, err = await self.__send_userdata()
 			if err is not None:
@@ -370,10 +393,10 @@ class RDPConnection:
 			ud_core.clientDigProductId = b'\x00' * 64
 			ud_core.connectionType = CONNECTION_TYPE.UNK
 			ud_core.pad1octet = b'\x00'
-			ud_core.serverSelectedProtocol = self.x224_connection_reply.rdpNegData.selectedProtocol
+			ud_core.serverSelectedProtocol = self.x224_protocol
 			
 			ud_sec = TS_UD_CS_SEC()
-			ud_sec.encryptionMethods = ENCRYPTION_FLAG.FRENCH
+			ud_sec.encryptionMethods = ENCRYPTION_FLAG.FRENCH if self.x224_protocol is not SUPP_PROTOCOLS.RDP else ENCRYPTION_FLAG.BIT_128
 			ud_sec.extEncryptionMethods = ENCRYPTION_FLAG.FRENCH
 
 			ud_clust = TS_UD_CS_CLUSTER()
@@ -486,11 +509,11 @@ class RDPConnection:
 
 			# weirdness ends here... FOR NOW!
 
-			server_connect_pdu_raw = self.__t124_codec.decode('ConnectGCCPDU', server_res_t124['connectPDU']+remdata)			
-			server_connect_pdu = TS_SC.from_bytes(server_connect_pdu_raw[1]['userData'][0]['value']).serverdata
+			server_connect_pdu_raw = self.__t124_codec.decode('ConnectGCCPDU', server_res_t124['connectPDU']+remdata)
+			self.__server_connect_pdu = TS_SC.from_bytes(server_connect_pdu_raw[1]['userData'][0]['value']).serverdata
 
 			# populating channels
-			scnet = server_connect_pdu[TS_UD_TYPE.SC_NET]
+			scnet = self.__server_connect_pdu[TS_UD_TYPE.SC_NET]
 			for i, name in enumerate(self.__joined_channels):
 				self.__joined_channels[name].channel_id = scnet.channelIdArray[i]
 				self.__channel_id_lookup[scnet.channelIdArray[i]] = self.__joined_channels[name]
@@ -551,6 +574,25 @@ class RDPConnection:
 			return True, None
 		except Exception as e:
 			return None, e
+	
+	async def __security_exchange(self):
+		try:
+			print(self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY])
+			self.cryptolayer = RDPCryptoLayer(self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].serverRandom)
+			enc_secret = self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].serverCertificate.encrypt(self.cryptolayer.ClientRandom)
+			secexchange = TS_SECURITY_PACKET()
+			secexchange.encryptedClientRandom = enc_secret
+
+			print(secexchange.to_bytes())
+
+			sec_hdr = TS_SECURITY_HEADER()
+			sec_hdr.flags = SEC_HDR_FLAG.EXCHANGE_PKT
+			sec_hdr.flagsHi = 0
+
+			await self.__joined_channels['MCS'].data_in_queue.put((secexchange, sec_hdr, None, None))
+			return True, None
+		except Exception as e:
+			return None, e
 
 	async def __send_userdata(self):
 		try:
@@ -600,9 +642,33 @@ class RDPConnection:
 
 			sec_hdr = TS_SECURITY_HEADER()
 			sec_hdr.flags = SEC_HDR_FLAG.INFO_PKT
+			if self.cryptolayer is not None:
+				sec_hdr.flags |= SEC_HDR_FLAG.ENCRYPT
 			sec_hdr.flagsHi = 0
 
 			await self.__joined_channels['MCS'].data_in_queue.put((info, sec_hdr, None, None))
+
+			### ENCTEST!!!!
+			#response, err = await self._x224net.in_queue.get()
+			#if err is not None:
+			#	raise err
+			#response_parsed = self._t125_per_codec.decode('DomainMCSPDU', response.data)
+			#if response_parsed[0] != 'sendDataIndication':
+			#	print('WWWAAAAAAA')
+			#print(response_parsed[1]['userData'])
+			#sec_hdr = TS_SECURITY_HEADER.from_bytes(response_parsed[1]['userData'])
+			#print(sec_hdr)
+			#if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
+			#	dec = self.cryptolayer.client_dec(response_parsed[1]['userData'][12:])
+			#	print(dec)
+			#	dec = self.cryptolayer.client_enc(response_parsed[1]['userData'][12:])
+			#	print(dec)
+			#	dec = self.cryptolayer.server_enc(response_parsed[1]['userData'][12:])
+			#	print(dec)
+			#	dec = self.cryptolayer.server_dec(response_parsed[1]['userData'][12:])
+			#	print(dec)
+
+
 			return True, None
 		except Exception as e:
 			return None, e
@@ -630,9 +696,23 @@ class RDPConnection:
 			if err is not None:
 				raise err
 			
+			#### ENCTEST
+			if self.cryptolayer is not None:
+				print('__handle_mandatory_capability_exchange 1')
+				sec_hdr = TS_SECURITY_HEADER1.from_bytes(data)
+				print(sec_hdr)
+				if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
+					data = self.cryptolayer.client_dec(data[12:])
+					print(data)
+					mac = self.cryptolayer.calc_mac(data)
+					print(mac)
+					print(mac == sec_hdr.dataSignature)
+
+
 			#print(data)
 			res = TS_DEMAND_ACTIVE_PDU.from_bytes(data)
-			#print(res)
+			print(res)
+			print('================================== SERVER IN ENDS HERE ================================================')
 			
 			caps = []
 			# now we send our capabilities
@@ -676,7 +756,7 @@ class RDPConnection:
 			caps.append(cap)
 
 			cap = TS_VIRTUALCHANNEL_CAPABILITYSET()
-			cap.flags = VCCAPS.COMPR_SC | VCCAPS.COMPR_CS_8K
+			cap.flags = VCCAPS.COMPR_CS_8K | VCCAPS.COMPR_SC
 			caps.append(cap)
 
 			cap = TS_SOUND_CAPABILITYSET()
@@ -692,17 +772,38 @@ class RDPConnection:
 			msg.originatorID = 1002
 			for cap in caps:
 				msg.capabilitySets.append(TS_CAPS_SET.from_capability(cap))
+			
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+			
+			print(msg)
 
-			await self.__joined_channels['MCS'].data_in_queue.put((msg, None, None, share_hdr))
+			await self.__joined_channels['MCS'].data_in_queue.put((msg, sec_hdr, None, share_hdr))
 
 			data, err = await self.__joined_channels['MCS'].out_queue.get()
 			if err is not None:
 				raise err
 			
+			#### ENCTEST
+			if self.cryptolayer is not None:
+				print('__handle_mandatory_capability_exchange 2')
+				sec_hdr = TS_SECURITY_HEADER1.from_bytes(data)
+				print(sec_hdr)
+				if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
+					data = self.cryptolayer.client_dec(data[12:])
+					print(data)
+					mac = self.cryptolayer.calc_mac(data)
+					print(mac)
+					print(mac == sec_hdr.dataSignature)
+			
+			print(TS_SHAREDATAHEADER.from_bytes(data))
 			# at this point it's either error or synchronize pdu from server
 			#print(data)
 			res = TS_SYNCHRONIZE_PDU.from_bytes(data)
-			#print(res)
+			print(res)
 
 			#print(data)
 			res = TS_CONTROL_PDU.from_bytes(data)
@@ -749,7 +850,14 @@ class RDPConnection:
 			data_hdr.pduType2 = PDUTYPE2.FONTLIST
 
 			cli_font = TS_FONT_LIST_PDU()
-			await self.__joined_channels['MCS'].data_in_queue.put((cli_font, None, data_hdr, None))
+			
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+
+			await self.__joined_channels['MCS'].data_in_queue.put((cli_font, sec_hdr, data_hdr, None))
 			return True, None
 		except Exception as e:
 			return None, e
@@ -765,9 +873,14 @@ class RDPConnection:
 				if err is not None:
 					raise err
 
-				#print('__x224_reader data in -> %s' % response.data)
-				x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
-				#print('__x224_reader decoded data in -> %s' % str(x))
+				data = response.data
+				#if self.cryptolayer is not None:
+				#	data = self.cryptolayer.client_dec(response.data[8:])
+				#	print('Decrypted data! %s' % data)
+
+				print('__x224_reader data in -> %s' % data)
+				x = self._t125_per_codec.decode('DomainMCSPDU', data)
+				print('__x224_reader decoded data in -> %s' % str(x))
 				if x[0] != 'sendDataIndication':
 					#print('Unknown packet!')
 					continue

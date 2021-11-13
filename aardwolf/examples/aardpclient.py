@@ -72,7 +72,7 @@ class RDPInterfaceThread(QObject):
 	async def rdpconnection(self):
 		try:
 			rdpurl = RDPConnectionURL(self.settings.url)
-			self.conn = rdpurl.get_connection(self.settings.iosettings)				
+			self.conn = rdpurl.get_connection(self.settings.iosettings)
 			_, err = await self.conn.connect()
 			if err is not None:
 				raise err
@@ -288,7 +288,7 @@ def main():
 	demo = RDPClientQTGUI(settings)
 	demo.show()
 	app.exec_()
-	qApp.quit()	
+	qApp.quit()
 
 if __name__ == '__main__':
 	main()

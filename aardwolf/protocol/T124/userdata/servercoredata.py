@@ -27,12 +27,23 @@ class TS_UD_SC_CORE:
 
 	@staticmethod
 	def from_buffer(buff: io.BytesIO):
+		def is_end(buff, start, size):
+			return buff.tell() - start >= size
+		start = buff.tell()
 		msg = TS_UD_SC_CORE()
 		msg.type = TS_UD_TYPE(int.from_bytes(buff.read(2), byteorder='little', signed = False))
 		msg.length = int.from_bytes(buff.read(2), byteorder='little', signed = False)
+		if is_end(buff,start, msg.length):
+			return msg
 		msg.version = int.from_bytes(buff.read(4), byteorder='little', signed = False)
+		if is_end(buff,start, msg.length):
+			return msg
 		msg.clientRequestedProtocols = int.from_bytes(buff.read(4), byteorder='little', signed = False)
+		if is_end(buff,start, msg.length):
+			return msg
 		msg.earlyCapabilityFlags = RNS_UD_SC(int.from_bytes(buff.read(4), byteorder='little', signed = False))
+		if is_end(buff,start, msg.length):
+			return msg
 		return msg
 
 	def __repr__(self):

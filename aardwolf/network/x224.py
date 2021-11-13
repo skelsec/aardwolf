@@ -54,7 +54,12 @@ class X224Network:
 			reply, err = await self.in_queue.get()
 			if err is not None:
 				raise err
+			if reply.CR != TPDU_TYPE.CONNECTION_CONFIRM:
+				raise Exception('Server sent back unknown TPDU type! %s' % reply.CR)
 			reply = typing.cast(ConnectionConfirm, reply)
+			if reply.rdpNegData is None:
+				return reply, None
+			
 			if reply.rdpNegData.type == 3 and to_raise is True:
 				#server denied our request!
 				raise Exception('Server refused our connection request! Reason: %s' % reply.rdpNegData.failureCode.name)

@@ -47,7 +47,11 @@ class TS_INPUT_CAPABILITYSET:
 		msg.keyboardType = int.from_bytes(buff.read(4), byteorder='little', signed = False)
 		msg.keyboardSubType = int.from_bytes(buff.read(4), byteorder='little', signed = False)
 		msg.keyboardFunctionKey = int.from_bytes(buff.read(4), byteorder='little', signed = False)
-		msg.imeFileName = buff.read(64).decode('utf-16-le').replace('\x00', '')
+		try:
+			msg.imeFileName = buff.read(64).decode('utf-16-le').replace('\x00', '')
+		except:
+			#TODO: FIX THIS (on windows XP it is some werid garbage here)
+			msg.imeFileName = ''
 		
 		return msg
 
