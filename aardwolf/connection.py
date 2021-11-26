@@ -884,9 +884,9 @@ class RDPConnection:
 
 				if response is None:
 					raise Exception('Server terminated the connection!')
-				print('__x224_reader data in -> %s' % response.data)
+				#print('__x224_reader data in -> %s' % response.data)
 				x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
-				print('__x224_reader decoded data in -> %s' % str(x))
+				#print('__x224_reader decoded data in -> %s' % str(x))
 				if x[0] != 'sendDataIndication':
 					#print('Unknown packet!')
 					continue
@@ -953,12 +953,12 @@ class RDPConnection:
 					if fpdu.fpOutputUpdates.fragmentation != FASTPATH_FRAGMENT.SINGLE:
 						print('WARNING! FRAGMENTATION IS NOT IMPLEMENTED! %s' % fpdu.fpOutputUpdates.fragmentation)
 					if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.BITMAP:
-						print('bitmap')
+						#print('bitmap')
 						for bitmapdata in fpdu.fpOutputUpdates.update.rectangles:
 							await self.ext_out_queue.put(RDP_VIDEO.from_bitmapdata(bitmapdata))
-					else:
-						if fpdu.fpOutputUpdates.updateCode not in [FASTPATH_UPDATETYPE.CACHED, FASTPATH_UPDATETYPE.POINTER]:
-							print('notbitmap %s' % fpdu.fpOutputUpdates.updateCode.name)
+					#else:
+					#	if fpdu.fpOutputUpdates.updateCode not in [FASTPATH_UPDATETYPE.CACHED, FASTPATH_UPDATETYPE.POINTER]:
+					#		print('notbitmap %s' % fpdu.fpOutputUpdates.updateCode.name)
 				except Exception as e:
 					# the decoder is not perfect yet, so it's better to keep this here...
 					traceback.print_exc()
