@@ -89,7 +89,7 @@ class RDPConnection:
 		self.__external_reader_task = None
 		self.__x224_reader_task = None
 		self.client_x224_flags = 0
-		self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP # SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
+		self.client_x224_supported_protocols = SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
 		self.cryptolayer:RDPCryptoLayer = None
 
 	
