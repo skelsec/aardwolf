@@ -16,7 +16,7 @@ class FASTPATH_ACTION(enum.Enum):
 	FASTPATH = 0x0 #Indicates that the PDU is a fast-path output PDU.
 	X224 = 0x3 #Indicates the presence of a TPKT Header ([T123] section 8) initial version byte which indicates that the PDU is a slow-path output PDU (in this case the full value of the initial byte MUST be 0x03).
 
-class FASTPATH_SEC(enum.Enum):
+class FASTPATH_SEC(enum.IntFlag):
 	NONE = 0x0
 	SECURE_CHECKSUM = 0x1 #Indicates that the MAC signature for the PDU was generated using the "salted MAC generation" technique (section 5.3.6.1.1). If this bit is not set, then the standard technique was used (sections 2.2.8.1.1.2.2 and 2.2.8.1.1.2.3).
 	ENCRYPTED = 0x2 #Indicates that the PDU contains an 8-byte MAC signature after the optional length2 field (that is, the dataSignature field is present), and the contents of the PDU are encrypted using the negotiated encryption package (sections 5.3.2 and 5.3.6).
@@ -114,12 +114,14 @@ class TS_FP_UPDATE:
 		msg.fragmentation = FASTPATH_FRAGMENT((updateHeader >> 4) & 3)
 		msg.compression = FASTPATH_OUTPUT_COMPRESSION(updateHeader >> 6)
 		if FASTPATH_OUTPUT_COMPRESSION.USED in msg.compression:
+			print('Bulk compression not implemented!')
 			msg.compressionFlags = int.from_bytes(buff.read(1), byteorder='little', signed = False)
 		msg.size = int.from_bytes(buff.read(2), byteorder='little', signed = False)
 		msg.updateData = buff.read(msg.size)
 		ot = otype2obj[msg.updateCode]
 		if ot is not None:
 			msg.update = ot.from_bytes(msg.updateData)
+		
 		return msg
 
 	def __repr__(self):
@@ -188,18 +190,24 @@ class TS_FP_UPDATE_PDU:
 
 		if with_fips is True:
 			msg.fipsInformation = TS_FP_FIPS_INFO.from_buffer(buff)
-		if msg.flags == FASTPATH_SEC.ENCRYPTED or msg.flags == FASTPATH_SEC.SECURE_CHECKSUM:
+		if FASTPATH_SEC.ENCRYPTED in msg.flags or FASTPATH_SEC.SECURE_CHECKSUM in msg.flags:
 			msg.dataSignature = buff.read(8)
 		
-		msg.fpOutputUpdates = TS_FP_UPDATE.from_buffer(buff)
-
+		if FASTPATH_SEC.ENCRYPTED in msg.flags:
+			msg.fpOutputUpdates = buff.read()
+		else:
+			msg.fpOutputUpdates = TS_FP_UPDATE.from_buffer(buff)
 
 		return msg
 
 	def __repr__(self):
 		t = '==== TS_SHAREDATAHEADER ====\r\n'
 		for k in self.__dict__:
-			if isinstance(self.__dict__[k], enum.Enum):
+			if k == 'fpOutputUpdates':
+				value = self.__dict__[k][:100]
+			elif isinstance(self.__dict__[k], enum.IntFlag):
+				value = self.__dict__[k].name
+			elif isinstance(self.__dict__[k], enum.Enum):
 				value = self.__dict__[k].name
 			else:
 				value = self.__dict__[k]

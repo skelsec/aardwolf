@@ -77,7 +77,9 @@ class TS_SECURITY_HEADER1:
 	def __repr__(self):
 		t = '==== TS_SECURITY_HEADER1 ====\r\n'
 		for k in self.__dict__:
-			if isinstance(self.__dict__[k], enum.Enum):
+			if isinstance(self.__dict__[k], enum.IntFlag):
+				value = self.__dict__[k]
+			elif isinstance(self.__dict__[k], enum.Enum):
 				value = self.__dict__[k].name
 			else:
 				value = self.__dict__[k]

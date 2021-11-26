@@ -1,4 +1,5 @@
 
+from ctypes import POINTER
 from aardwolf.authentication import credssp
 import traceback
 import asyncio
@@ -7,6 +8,7 @@ from typing import cast
 from collections import OrderedDict
 
 import asn1tools
+from aardwolf import logger
 from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.network.selector import NetworkSelector
 from aardwolf.commons.credential import RDPCredentialsSecretType, RDPAuthProtocol
@@ -38,9 +40,10 @@ from aardwolf.protocol.T125.controlpdu import *
 from aardwolf.protocol.T125.fontlistpdu import *
 from aardwolf.protocol.T125.inputeventpdu import *
 from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
+from aardwolf.protocol.T125.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
 
 
-from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FASTPATH_FRAGMENT
+from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FASTPATH_FRAGMENT, FASTPATH_SEC, TS_FP_UPDATE
 from aardwolf.commons.queuedata import *
 from aardwolf.commons.authbuilder import AuthenticatorBuilder
 from aardwolf.channels import Channel
@@ -52,7 +55,6 @@ class RDPConnection:
 		self.credentials = credentials
 		self.authapi = authapi
 		self.iosettings = iosettings
-		self.channels = channels
 
 		# these are the main queues with which you can communicate with the server
 		# ext_out_queue: yields video data
@@ -76,16 +78,12 @@ class RDPConnection:
 		self._initiator = None
 		self.__channel_id_lookup = {}
 		self.__joined_channels =  OrderedDict({})
-		for channel in channels:
-			self.__joined_channels[channel.name] = channel(self.iosettings)
-
-		#self.__joined_channels = OrderedDict({#name -> channel
-		#	#'cliprdr' : Channel('cliprdr', ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP|ChannelOption.COMPRESS_RDP|ChannelOption.SHOW_PROTOCOL),
-		#	#'rdpsnd' : Channel('rdpsnd', ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP),
-		#	#'snddbg' : Channel('snddbg', ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP),
-		#	#'rdpdr' : Channel('rdpdr', ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP),
-		#	#'drdynvc' : Channel('drdynvc', ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP),
-		#})
+		
+		#TESTING!!!!
+		if False:
+			for channel in channels:
+				self.__joined_channels[channel.name] = channel(self.iosettings)
+		
 		self.__channel_task = {} #name -> channeltask
 
 		
@@ -93,7 +91,7 @@ class RDPConnection:
 		self.__external_reader_task = None
 		self.__x224_reader_task = None
 		self.client_x224_flags = 0
-		self.client_x224_supported_protocols = SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
+		self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP # SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
 		self.cryptolayer:RDPCryptoLayer = None
 
 	
@@ -221,38 +219,47 @@ class RDPConnection:
 			_, err = await self.__establish_channels()
 			if err is not None:
 				raise err
+			logger.debug('Establish channels OK')
 			
 			_, err = await self.__erect_domain()
 			if err is not None:
 				raise err
+			logger.debug('Erect domain OK')
 			
 			_, err = await self.__attach_user()
 			if err is not None:
 				raise err
+			logger.debug('Attach user OK')
 			
 			_, err = await self.__join_channels()
 			if err is not None:
 				raise err
+			logger.debug('Join channels OK')
 			
 			if self.x224_protocol == SUPP_PROTOCOLS.RDP:
 				# key exchange here because we use old version of the protocol
 				_, err = await self.__security_exchange()
 				if err is not None:
 					raise err
+				logger.debug('Security exchange OK')
 
 			_, err = await self.__send_userdata()
 			if err is not None:
 				raise err
+			logger.debug('Send userdata OK')
 
 			_, err = await self.__handle_license()
 			if err is not None:
 				raise err
+			logger.debug('handle license OK')
 
 			_, err = await self.__handle_mandatory_capability_exchange()
 			if err is not None:
 				raise err
+			logger.debug('mandatory capability exchange OK')
 
 			self.__external_reader_task = asyncio.create_task(self.__external_reader())
+			logger.debug('RDP connection sequence done')
 			return True, None
 		except Exception as e:
 			return None, e
@@ -577,13 +584,10 @@ class RDPConnection:
 	
 	async def __security_exchange(self):
 		try:
-			print(self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY])
 			self.cryptolayer = RDPCryptoLayer(self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].serverRandom)
 			enc_secret = self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].serverCertificate.encrypt(self.cryptolayer.ClientRandom)
 			secexchange = TS_SECURITY_PACKET()
 			secexchange.encryptedClientRandom = enc_secret
-
-			print(secexchange.to_bytes())
 
 			sec_hdr = TS_SECURITY_HEADER()
 			sec_hdr.flags = SEC_HDR_FLAG.EXCHANGE_PKT
@@ -629,7 +633,7 @@ class RDPConnection:
 			info.Domain = ''
 			info.UserName = ''
 			info.Password = ''
-			if self.authapi is None:
+			if self.authapi is None or SUPP_PROTOCOLS.SSL in self.x224_protocol:
 				if self.credentials.domain is not None:
 					info.Domain = self.credentials.domain
 				if self.credentials.username is not None:
@@ -695,24 +699,17 @@ class RDPConnection:
 			data, err = await self.__joined_channels['MCS'].out_queue.get()
 			if err is not None:
 				raise err
-			
-			#### ENCTEST
-			if self.cryptolayer is not None:
-				print('__handle_mandatory_capability_exchange 1')
-				sec_hdr = TS_SECURITY_HEADER1.from_bytes(data)
-				print(sec_hdr)
-				if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
-					data = self.cryptolayer.client_dec(data[12:])
-					print(data)
-					mac = self.cryptolayer.calc_mac(data)
-					print(mac)
-					print(mac == sec_hdr.dataSignature)
-
 
 			#print(data)
 			res = TS_DEMAND_ACTIVE_PDU.from_bytes(data)
-			print(res)
-			print('================================== SERVER IN ENDS HERE ================================================')
+			for cap in res.capabilitySets:
+				#print(cap)
+				if cap.capabilitySetType == CAPSTYPE.GENERAL:
+					cap = typing.cast(TS_GENERAL_CAPABILITYSET, cap.capability)
+					if EXTRAFLAG.ENC_SALTED_CHECKSUM in cap.extraFlags and self.cryptolayer is not None:
+						self.cryptolayer.use_encrypted_mac = True
+			#print(res)
+			#print('================================== SERVER IN ENDS HERE ================================================')
 			
 			caps = []
 			# now we send our capabilities
@@ -720,6 +717,8 @@ class RDPConnection:
 			cap.osMajorType = OSMAJORTYPE.WINDOWS
 			cap.osMinorType = OSMINORTYPE.WINDOWS_NT
 			cap.extraFlags =  EXTRAFLAG.FASTPATH_OUTPUT_SUPPORTED | EXTRAFLAG.NO_BITMAP_COMPRESSION_HDR | EXTRAFLAG.LONG_CREDENTIALS_SUPPORTED
+			if self.cryptolayer is not None and self.cryptolayer.use_encrypted_mac is True:
+				cap.extraFlags |= EXTRAFLAG.ENC_SALTED_CHECKSUM
 			caps.append(cap)
 
 			cap = TS_BITMAP_CAPABILITYSET()
@@ -727,6 +726,8 @@ class RDPConnection:
 			cap.desktopWidth = self.iosettings.video_width
 			cap.desktopHeight = self.iosettings.video_height
 			caps.append(cap)
+
+			#TS_FONT_CAPABILITYSET missing
 
 			cap = TS_ORDER_CAPABILITYSET()
 			cap.orderFlags = ORDERFLAG.ZEROBOUNDSDELTASSUPPORT | ORDERFLAG.NEGOTIATEORDERSUPPORT #do not change this!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -778,8 +779,6 @@ class RDPConnection:
 				sec_hdr = TS_SECURITY_HEADER()
 				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
 				sec_hdr.flagsHi = 0
-			
-			print(msg)
 
 			await self.__joined_channels['MCS'].data_in_queue.put((msg, sec_hdr, None, share_hdr))
 
@@ -787,29 +786,22 @@ class RDPConnection:
 			if err is not None:
 				raise err
 			
-			#### ENCTEST
-			if self.cryptolayer is not None:
-				print('__handle_mandatory_capability_exchange 2')
-				sec_hdr = TS_SECURITY_HEADER1.from_bytes(data)
-				print(sec_hdr)
-				if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
-					data = self.cryptolayer.client_dec(data[12:])
-					print(data)
-					mac = self.cryptolayer.calc_mac(data)
-					print(mac)
-					print(mac == sec_hdr.dataSignature)
-			
-			print(TS_SHAREDATAHEADER.from_bytes(data))
-			# at this point it's either error or synchronize pdu from server
-			#print(data)
-			res = TS_SYNCHRONIZE_PDU.from_bytes(data)
-			print(res)
+			shc = TS_SHARECONTROLHEADER.from_bytes(data)
+			if shc.pduType == PDUTYPE.DATAPDU:
+				shd = TS_SHAREDATAHEADER.from_bytes(data)
+				if shd.pduType2 == PDUTYPE2.SET_ERROR_INFO_PDU:
+					# we got an error!
+					res = TS_SET_ERROR_INFO_PDU.from_bytes(data)
+					raise Exception('Server replied with error! Code: %s ErrName: %s' % (hex(res.errorInfoRaw), res.errorInfo.name))
 
-			#print(data)
-			res = TS_CONTROL_PDU.from_bytes(data)
-			#print(res)
-
+				elif shd.pduType2 == PDUTYPE2.SYNCHRONIZE:
+					# this is the expected data here
+					res = TS_SYNCHRONIZE_PDU.from_bytes(data)
 			
+				else:
+					raise Exception('Unexpected reply! %s' % shd.pduType2.name)
+			else:
+				raise Exception('Unexpected reply! %s' % shc.pduType.name)
 
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
@@ -818,7 +810,12 @@ class RDPConnection:
 
 			cli_sync = TS_SYNCHRONIZE_PDU()
 			cli_sync.targetUser = self.__joined_channels['MCS'].channel_id
-			await self.__joined_channels['MCS'].data_in_queue.put((cli_sync, None, data_hdr, None))
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+			await self.__joined_channels['MCS'].data_in_queue.put((cli_sync, sec_hdr, data_hdr, None))
 
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
@@ -830,7 +827,14 @@ class RDPConnection:
 			cli_ctrl.grantId = 0
 			cli_ctrl.controlId = 0
 
-			await self.__joined_channels['MCS'].data_in_queue.put((cli_ctrl, None, data_hdr, None))
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+
+			await self.__joined_channels['MCS'].data_in_queue.put((cli_ctrl, sec_hdr, data_hdr, None))
+			
 
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
@@ -842,7 +846,13 @@ class RDPConnection:
 			cli_ctrl.grantId = 0
 			cli_ctrl.controlId = 0
 
-			await self.__joined_channels['MCS'].data_in_queue.put((cli_ctrl, None, data_hdr, None))
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+
+			await self.__joined_channels['MCS'].data_in_queue.put((cli_ctrl, sec_hdr, data_hdr, None))
 
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
@@ -858,6 +868,7 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.__joined_channels['MCS'].data_in_queue.put((cli_font, sec_hdr, data_hdr, None))
+			
 			return True, None
 		except Exception as e:
 			return None, e
@@ -873,19 +884,34 @@ class RDPConnection:
 				if err is not None:
 					raise err
 
-				data = response.data
-				#if self.cryptolayer is not None:
-				#	data = self.cryptolayer.client_dec(response.data[8:])
-				#	print('Decrypted data! %s' % data)
-
-				print('__x224_reader data in -> %s' % data)
-				x = self._t125_per_codec.decode('DomainMCSPDU', data)
+				if response is None:
+					raise Exception('Server terminated the connection!')
+				print('__x224_reader data in -> %s' % response.data)
+				x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
 				print('__x224_reader decoded data in -> %s' % str(x))
 				if x[0] != 'sendDataIndication':
 					#print('Unknown packet!')
 					continue
 				
-				await self.__channel_id_lookup[x[1]['channelId']].raw_in_queue.put((x[1]['userData'], None))
+				data = x[1]['userData']
+				if data is not None:
+					if self.cryptolayer is not None:
+						sec_hdr = TS_SECURITY_HEADER1.from_bytes(data)
+						if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
+							orig_data = data[12:]
+							data = self.cryptolayer.client_dec(orig_data)
+							if SEC_HDR_FLAG.SECURE_CHECKSUM in sec_hdr.flags:
+								mac = self.cryptolayer.calc_salted_mac(data, is_server=True)
+							else:
+								mac = self.cryptolayer.calc_mac(data)
+							if mac != sec_hdr.dataSignature:
+								print('ERROR! Signature mismatch! Printing debug data')
+								print('Encrypted data: %s' % orig_data)
+								print('Decrypted data: %s' % data)
+								print('Original MAC  : %s' % sec_hdr.dataSignature)
+								print('Calculated MAC: %s' % mac)
+				
+				await self.__channel_id_lookup[x[1]['channelId']].raw_in_queue.put((data, None))
 
 		except Exception as e:
 			traceback.print_exc()
@@ -904,18 +930,41 @@ class RDPConnection:
 				response, err = await self.__tpkgnet.fastpath_in_queue.get()
 				if err is not None:
 					raise err
+				if response is None:
+					raise Exception('Server terminated the connection!')
 
 				try:
 					#print('fastpath data in -> %s' % len(response))
 					fpdu = TS_FP_UPDATE_PDU.from_bytes(response)
-					#if fpdu.fpOutputUpdates.fragmentation != FASTPATH_FRAGMENT.SINGLE:
-						#print(fpdu.fpOutputUpdates.fragmentation)
+					if FASTPATH_SEC.ENCRYPTED in fpdu.flags:
+						data = self.cryptolayer.client_dec(fpdu.fpOutputUpdates)
+						if FASTPATH_SEC.SECURE_CHECKSUM in fpdu.flags:
+							mac = self.cryptolayer.calc_salted_mac(data, is_server=True)
+						else:
+							mac = self.cryptolayer.calc_mac(data)
+						if mac != fpdu.dataSignature:
+							print('ERROR! Signature mismatch! Printing debug data')
+							print('FASTPATH_SEC  : %s' % fpdu)
+							print('Encrypted data: %s' % fpdu.fpOutputUpdates[:100])
+							print('Decrypted data: %s' % data[:100])
+							print('Original MAC  : %s' % fpdu.dataSignature)
+							print('Calculated MAC: %s' % mac)
+							raise Exception('Signature mismatch')
+						fpdu.fpOutputUpdates = TS_FP_UPDATE.from_bytes(data)
+
+					if fpdu.fpOutputUpdates.fragmentation != FASTPATH_FRAGMENT.SINGLE:
+						print('WARNING! FRAGMENTATION IS NOT IMPLEMENTED! %s' % fpdu.fpOutputUpdates.fragmentation)
 					if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.BITMAP:
+						print('bitmap')
 						for bitmapdata in fpdu.fpOutputUpdates.update.rectangles:
 							await self.ext_out_queue.put(RDP_VIDEO.from_bitmapdata(bitmapdata))
+					else:
+						if fpdu.fpOutputUpdates.updateCode not in [FASTPATH_UPDATETYPE.CACHED, FASTPATH_UPDATETYPE.POINTER]:
+							print('notbitmap %s' % fpdu.fpOutputUpdates.updateCode.name)
 				except Exception as e:
 					# the decoder is not perfect yet, so it's better to keep this here...
 					traceback.print_exc()
+					return
 				
 				
 		except Exception as e:
@@ -949,7 +998,14 @@ class RDPConnection:
 					clii_kb = TS_INPUT_EVENT.from_input(kbi)
 					cli_input = TS_INPUT_PDU_DATA()
 					cli_input.slowPathInputEvents.append(clii_kb)
-					await self.__joined_channels['MCS'].data_in_queue.put((cli_input, None, data_hdr, None))
+
+					sec_hdr = None
+					if self.cryptolayer is not None:
+						sec_hdr = TS_SECURITY_HEADER()
+						sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+						sec_hdr.flagsHi = 0
+
+					await self.__joined_channels['MCS'].data_in_queue.put((cli_input, sec_hdr, data_hdr, None))
 			
 				elif indata.type == RDPDATATYPE.MOUSE:
 					if indata.xPos < 0 or indata.yPos < 0:
@@ -981,7 +1037,15 @@ class RDPConnection:
 					
 					cli_input = TS_INPUT_PDU_DATA()
 					cli_input.slowPathInputEvents.append(clii_mouse)
-					await self.__joined_channels['MCS'].data_in_queue.put((cli_input, None, data_hdr, None))
+
+					sec_hdr = None
+					if self.cryptolayer is not None:
+						sec_hdr = TS_SECURITY_HEADER()
+						sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+						sec_hdr.flagsHi = 0
+
+					
+					await self.__joined_channels['MCS'].data_in_queue.put((cli_input, sec_hdr, data_hdr, None))
 
 				elif indata.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
 					if 'cliprdr' not in self.__joined_channels:

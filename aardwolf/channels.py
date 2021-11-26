@@ -7,7 +7,7 @@ from asn1tools.codecs import restricted_utc_time_from_datetime
 
 from aardwolf.protocol.T124.userdata.constants import ChannelOption
 from aardwolf.protocol.T128.share import TS_SHARECONTROLHEADER, PDUTYPE
-from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
+from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
 
 class Channel:
 	def __init__(self, name, options = ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP):
@@ -43,8 +43,8 @@ class Channel:
 			self.connection = connection
 			self.initiator = self.connection._initiator
 			self.monitor_out_task = asyncio.create_task(self.monitor_out())
-			self.monitor_in_task =asyncio.create_task(self.monitor_in())
-			self.monitor_data_task =asyncio.create_task(self.__monitor_data_out())
+			self.monitor_in_task = asyncio.create_task(self.monitor_in())
+			self.monitor_data_task = asyncio.create_task(self.__monitor_data_out())
 			_, err = await self.start()
 			if err is not None:
 				raise err
@@ -64,6 +64,24 @@ class Channel:
 		try:
 			while True:
 				data, err = await self.raw_in_queue.get()
+				#if data is not None:
+				#	if self.connection.cryptolayer is not None:
+				#		sec_hdr = TS_SECURITY_HEADER1.from_bytes(data)
+				#		print(sec_hdr)
+				#		if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
+				#			orig_data = data[12:]
+				#			data = self.connection.cryptolayer.client_dec(orig_data)
+				#			if SEC_HDR_FLAG.SECURE_CHECKSUM in sec_hdr.flags:
+				#				mac = self.connection.cryptolayer.calc_salted_mac(data, is_server=True)
+				#			else:
+				#				mac = self.connection.cryptolayer.calc_mac(data)
+				#			if mac != sec_hdr.dataSignature:
+				#				print('ERROR! Signature mismatch! Printing debug data')
+				#				print('Encrypted data: %s' % orig_data)
+				#				print('Decrypted data: %s' % data)
+				#				print('Original MAC  : %s' % sec_hdr.dataSignature)
+				#				print('Calculated MAC: %s' % mac)
+						
 				if err is not None:
 					await self.out_queue.put((data, err))
 					raise err
@@ -115,10 +133,19 @@ class Channel:
 				if sec_hdr is not None:
 					sec_hdr = typing.cast(TS_SECURITY_HEADER, sec_hdr)
 					if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
+						#print('PacketCount: %s' % self.connection.cryptolayer.PacketCount)
 						data = hdrs+data
+						
+
+						if self.connection.cryptolayer.use_encrypted_mac is True:
+							checksum = self.connection.cryptolayer.calc_salted_mac(data)
+							sec_hdr.flags |= SEC_HDR_FLAG.SECURE_CHECKSUM
+						else:
+							checksum = self.connection.cryptolayer.calc_mac(data)
+						
 						# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/9791c9e2-e5be-462f-8c23-3404c4af63b3
-						enc_data = self.connection.cryptolayer.client_enc(data) 
-						checksum = self.connection.cryptolayer.calc_mac(data)
+						enc_data = self.connection.cryptolayer.client_enc(data)
+						
 						data = checksum + enc_data
 						hdrs = sec_hdr.to_bytes()
 					else:

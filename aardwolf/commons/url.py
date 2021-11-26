@@ -176,6 +176,18 @@ class RDPConnectionURL:
 				if self.authentication_protocol == RDPAuthProtocol.KERBEROS:
 					raise Exception('For kerberos auth you need to specify the secret type in the connection string!')
 
+	def __str__(self):
+		t = '==== RDPConnectionURL ====\r\n'
+		for k in self.__dict__:
+			val = self.__dict__[k]
+			if isinstance(val, enum.IntFlag):
+				val = val
+			elif isinstance(val, enum.Enum):
+				val = val.name
+			
+			t += '%s: %s\r\n' % (k, str(val))
+			
+		return t
 
 	def parse(self):
 		url_e = urlparse(self.connection_url)

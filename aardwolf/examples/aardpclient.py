@@ -5,6 +5,8 @@ import asyncio
 import traceback
 import queue
 import threading
+
+from aardwolf import logger
 from aardwolf.commons.url import RDPConnectionURL
 from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.commons.queuedata import RDPDATATYPE
@@ -258,6 +260,7 @@ class RDPClientQTGUI(QMainWindow):
 
 
 def main():
+	import logging
 	import argparse
 	parser = argparse.ArgumentParser(description='Async RDP Client')
 	parser.add_argument('-v', '--verbose', action='count', default=0, help='Verbosity, can be stacked')
@@ -268,6 +271,11 @@ def main():
 	parser.add_argument('url', help="RDP connection url")
 
 	args = parser.parse_args()
+
+	if args.verbose == 1:
+		logger.setLevel(logging.INFO)
+	elif args.verbose > 1:
+		logger.setLevel(logging.DEBUG)
 
 	width, height = args.res.upper().split('X')
 	height = int(height)

@@ -15,6 +15,7 @@ from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
 from aardwolf.commons.queuedata import *
 from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA_TXT
+from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
 
 class CLIPBRDSTATUS(enum.Enum):
 	WAITING_SERVER_INIT = enum.auto()
@@ -72,6 +73,23 @@ class RDPECLIPChannel(Channel):
 						raise NotImplementedError('Compression not implemented!')
 				else:
 					raise NotImplementedError('Chunked send not implemented!')
+				
+				print('CLIPBOARD MESSAGE OUT!!!!')
+				if self.connection.cryptolayer is not None and ChannelOption.ENCRYPT_RDP in self.options:
+					sec_hdr = TS_SECURITY_HEADER()
+					print('PacketCount: %s' % self.connection.cryptolayer.PacketCount)
+					data = packet
+					if self.connection.cryptolayer.use_encrypted_mac is True:
+						checksum = self.connection.cryptolayer.calc_salted_mac(data)
+						sec_hdr.flags |= SEC_HDR_FLAG.SECURE_CHECKSUM
+					else:
+						checksum = self.connection.cryptolayer.calc_mac(data)
+						
+					# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/9791c9e2-e5be-462f-8c23-3404c4af63b3
+					enc_data = self.connection.cryptolayer.client_enc(data)
+						
+					data = checksum + enc_data
+					packet = sec_hdr.to_bytes() + data
 
 				data_wrapper = {
 					'initiator': self.connection._initiator, 
@@ -226,7 +244,8 @@ class RDPECLIPChannel(Channel):
 				if err is not None:
 					await self.out_queue.put((data, err))
 					raise err
-				#print('Channel data in! "%s(%s)" <- %s' % (self.name, self.channel_id, data))
+				#print('Channel data in! "%s(%s)" <- %s' % (self.name, self.channel_id, data))		
+				
 				channeldata = CHANNEL_PDU_HEADER.from_bytes(data)
 				#print('channeldata %s' % channeldata)
 				self.__buffer += channeldata.data

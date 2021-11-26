@@ -54,6 +54,7 @@ class TS_BITMAP_DATA:
 		self.width:int = None
 		self.height:int = None
 		self.bitsPerPixel:int = None
+		self.flagsInt:int = None
 		self.flags:TS_BITMAP_FLAG = None
 		self.bitmapLength:int = None
 		self.bitmapComprHdr:TS_CD_HEADER = None
@@ -92,10 +93,11 @@ class TS_BITMAP_DATA:
 		msg.width = int.from_bytes(buff.read(2), byteorder='little', signed=False)
 		msg.height = int.from_bytes(buff.read(2), byteorder='little', signed=False)
 		msg.bitsPerPixel = int.from_bytes(buff.read(2), byteorder='little', signed=False)
-		msg.flags = TS_BITMAP_FLAG(int.from_bytes(buff.read(2), byteorder='little', signed=False))
+		msg.flagsInt = int.from_bytes(buff.read(2), byteorder='little', signed=False)
+		msg.flags = TS_BITMAP_FLAG(msg.flagsInt)
 		msg.bitmapLength = int.from_bytes(buff.read(2), byteorder='little', signed=False)
 		rl = msg.bitmapLength
-		if TS_BITMAP_FLAG.BITMAP_COMPRESSION in msg.flags and TS_BITMAP_FLAG.NO_BITMAP_COMPRESSION_HDR not in msg.flags:
+		if TS_BITMAP_FLAG.NO_BITMAP_COMPRESSION_HDR not in msg.flags and TS_BITMAP_FLAG.BITMAP_COMPRESSION in msg.flags:
 			msg.bitmapComprHdr = TS_CD_HEADER.from_buffer(buff)
 			#rl -= 8
 		msg.bitmapDataStream = buff.read(rl)

@@ -6,7 +6,7 @@ class TS_POINTER_CAPABILITYSET:
 	def __init__(self):
 		self.colorPointerFlag:bool = False
 		self.colorPointerCacheSize:int = 20
-		self.pointerCacheSize:int = 0
+		self.pointerCacheSize:int = 20 #0 # ???
 
 	def to_bytes(self):
 		t = int(self.colorPointerFlag).to_bytes(2, byteorder='little', signed = False)

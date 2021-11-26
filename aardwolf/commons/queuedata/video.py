@@ -27,3 +27,15 @@ class RDP_VIDEO:
 		res.is_compressed = TS_BITMAP_FLAG.BITMAP_COMPRESSION in bitmapdata.flags
 		res.data = bitmapdata.bitmapDataStream
 		return res
+
+	def __repr__(self):
+		t = '==== RDP_VIDEO ====\r\n'
+		for k in self.__dict__:
+			if isinstance(self.__dict__[k], enum.IntFlag):
+				value = self.__dict__[k]
+			elif isinstance(self.__dict__[k], enum.Enum):
+				value = self.__dict__[k].name
+			else:
+				value = self.__dict__[k]
+			t += '%s: %s\r\n' % (k, value)
+		return t

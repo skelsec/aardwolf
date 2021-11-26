@@ -79,7 +79,7 @@ setup(
 	entry_points={
 		'console_scripts': [
 			'aardpclient = aardwolf.examples.aardpclient:main',
-			'aardpcapsscan = aardwolf.examples.aardpcapsscan:main',
+			'aardpcapsscan = aardwolf.examples.aardpcapscan:main',
 		],
 
 	}

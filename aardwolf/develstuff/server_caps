@@ -1,0 +1,119 @@
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: GENERAL
+lengthCapability: 24
+capabilityData: b'\x01\x00\x03\x00\x00\x02\x00\x00\x00\x00\x1d\x04\x00\x00\x00\x00\x00\x00\x01\x01'
+capability: ==== TS_GENERAL_CAPABILITYSET ====
+osMajorType: WINDOWS
+osMinorType: WINDOWS_NT
+protocolVersion: 512
+pad2octetsA: b'\x00\x00'
+compressionTypes: 0
+extraFlags: EXTRAFLAG.NO_BITMAP_COMPRESSION_HDR|ENC_SALTED_CHECKSUM|AUTORECONNECT_SUPPORTED|LONG_CREDENTIALS_SUPPORTED|FASTPATH_OUTPUT_SUPPORTED
+updateCapabilityFlag: 0
+remoteUnshareFlag: 0
+compressionLevel: 0
+refreshRectSupport: True
+suppressOutputSupport: True
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: VIRTUALCHANNEL
+lengthCapability: 8
+capabilityData: b'\x02\x00\x00\x00'
+capability: ==== TS_VIRTUALCHANNEL_CAPABILITYSET ====
+flags: VCCAPS.COMPR_CS_8K
+VCChunkSize: None
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: FONT
+lengthCapability: 4
+capabilityData: b''
+capability: ==== TS_FONT_CAPABILITYSET ====
+fontSupportFlags: 0
+pad2octets: b''
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: BITMAP
+lengthCapability: 28
+capabilityData: b'\x10\x00\x01\x00\x01\x00\x01\x00\x00\x04\x00\x03\x00\x00\x01\x00\x01\x00\x00\x00\x01\x00\x00\x00'
+capability: ==== TS_BITMAP_CAPABILITYSET ====
+preferredBitsPerPixel: 16
+receive1BitPerPixel: True
+receive4BitsPerPixel: True
+receive8BitsPerPixel: True
+desktopWidth: 1024
+desktopHeight: 768
+pad2octets: 0
+desktopResizeFlag: True
+bitmapCompressionFlag: True
+highColorFlags: 0
+drawingFlags: DRAWFLAG.0
+multipleRectangleSupport: True
+pad2octetsB: 0
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: ORDER
+lengthCapability: 88
+capabilityData: b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00@B\x0f\x00\x01\x00\x14\x00\x00\x00\x01\x00\x00\x00"\x00\x01\x01\x01\x01\x01\x00\x00\x01\x01\x01\x01\x01\x00\x00\x00\x01\x01\x01\x01\x01\x01\x01\x01\x00\x01\x01\x01\x01\x00\x00\x00\x00\xa1\x06\x00\x00@B\x0f\x00@B\x0f\x00\x01\x00\x00\x00\x00\x00\x00\x00'
+capability: ==== TS_ORDER_CAPABILITYSET ====
+terminalDescriptor: b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+pad4octetsA: b'@B\x0f\x00'
+desktopSaveXGranularity: 1
+desktopSaveYGranularity: 20
+pad2octetsA: b'\x00\x00'
+maximumOrderLevel: 1
+numberFonts: 0
+orderFlags: ORDERFLAG.COLORINDEXSUPPORT|NEGOTIATEORDERSUPPORT
+orderSupport: ORDERFLGS_SUPP.TS_NEG_INDEX_INDEX|TS_NEG_ELLIPSE_CB_INDEX|TS_NEG_ELLIPSE_SC_INDEX|TS_NEG_FAST_GLYPH_INDEX|TS_NEG_POLYLINE_INDEX|TS_NEG_POLYGON_CB_INDEX|TS_NEG_POLYGON_SC_INDEX|TS_NEG_FAST_INDEX_INDEX|TS_NEG_MULTIOPAQUERECT_INDEX|TS_NEG_MULTISCRBLT_INDEX|TS_NEG_MULTIPATBLT_INDEX|TS_NEG_MULTIDSTBLT_INDEX|TS_NEG_SAVEBITMAP_INDEX|UnusedIndex3|TS_NEG_MULTI_DRAWNINEGRID_INDEX|TS_NEG_LINETO_INDEX|TS_NEG_DRAWNINEGRID_INDEX|TS_NEG_MEM3BLT_INDEX|TS_NEG_MEMBLT_INDEX|TS_NEG_SCRBLT_INDEX|TS_NEG_PATBLT_INDEX|TS_NEG_DSTBLT_INDEX
+textFlags: b'\xa1\x06'
+orderSupportExFlags: ORDERFLAGS_EX.0
+pad4octetsB: b'@B\x0f\x00'
+desktopSaveSize: 1000000
+pad2octetsC: b'\x01\x00'
+pad2octetsD: b'\x00\x00'
+textANSICodePage: b'\x00\x00'
+pad2octetsE: b'\x00\x00'
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: COLORCACHE
+lengthCapability: 8
+capabilityData: b'\x06\x00\x00\x00'
+capability: ==== TS_COLORTABLE_CAPABILITYSET ====
+colorTableCacheSize: 6
+pad2octets: b'\x00\x00'
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: BITMAPCACHE_HOSTSUPPORT
+lengthCapability: 8
+capabilityData: b'\x01\x00\x00\x00'
+capability: ==== TS_BITMAPCACHE_HOSTSUPPORT_CAPABILITYSET ====
+cacheVersion: 1
+pad: b'\x00\x00\x00'
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: POINTER
+lengthCapability: 10
+capabilityData: b'\x01\x00\x19\x00\x19\x00'
+capability: ==== TS_POINTER_CAPABILITYSET ====
+colorPointerFlag: True
+colorPointerCacheSize: 25
+pointerCacheSize: 25
+
+, ==== TS_CAPS_SET ====
+capabilitySetType: INPUT
+lengthCapability: 88
+capabilityData: b'5\x00\x00\x00\xa1\x06\x00\x00@B\x0f\x00$\xe7\xa2\xb1\xdf\x10G\xb1\x08\x10V\xe4n\xbeG\xb1X\xe7\xa2\xb1\x04\x00\x00\x00\xbc\xd3V\xe4\x08\xd0V\xe4\x08\x00\x00\x00\x08\xd0V\xe4\x01\x00\x00\x00P\xe7\xa2\xb1\x8a\xaaG\xb1\x08\xd0V\xe4D\xe7\xa2\xb1\x00\x00\x00\x00\x08\x00\n\x00\x01\x00\x19\x00'
+capability: ==== TS_INPUT_CAPABILITYSET ====
+inputFlags: INPUT_FLAG.FASTPATH_INPUT2|UNICODE|MOUSEX|SCANCODES
+pad2octets: b'\x00\x00'
+keyboardLayout: 1697
+keyboardType: 1000000
+keyboardSubType: 2980243236
+keyboardFunctionKey: 2974224607
+imeFileName: ဈ빮녇놢펼퀈퀈놢ꪊ녇퀈놢
+
+
+]
+sessionId: 0
+
+================================== SERVER IN ENDS HERE ================================================
