@@ -82,7 +82,7 @@ class RDPConnection:
 		for channel in channels:
 			self.__joined_channels[channel.name] = channel(self.iosettings)
 		
-		#self.__channel_task = {} #name -> channeltask
+		self.__channel_task = {} #name -> channeltask
 
 		
 		self.__fastpath_reader_task = None
