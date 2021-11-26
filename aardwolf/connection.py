@@ -79,12 +79,10 @@ class RDPConnection:
 		self.__channel_id_lookup = {}
 		self.__joined_channels =  OrderedDict({})
 		
-		#TESTING!!!!
-		if False:
-			for channel in channels:
-				self.__joined_channels[channel.name] = channel(self.iosettings)
+		for channel in channels:
+			self.__joined_channels[channel.name] = channel(self.iosettings)
 		
-		self.__channel_task = {} #name -> channeltask
+		#self.__channel_task = {} #name -> channeltask
 
 		
 		self.__fastpath_reader_task = None
