@@ -19,10 +19,10 @@ rle_module = Extension('rle',
 	sources = ['aardwolf/utils/rle/rle.c'])
 
 install_requires = []
-if platform.system() == 'windows':
+if platform.system().lower() == 'windows':
 	install_requires.append('pyqt5==5.12.3')
 	install_requires.append('pyqt5-sip==12.7.0')
-else:
+elif platform.system().lower() != 'emscripten':
 	install_requires.append('PyQt5')
 	install_requires.append('PyQt5-sip')
 	
@@ -69,6 +69,7 @@ setup(
 		'asn1tools',
 		'pycryptodomex',
 		'pyperclip>=1.8.2',
+		'Pillow>9.0.0',
 	] + install_requires,
 	
 	

@@ -87,7 +87,6 @@ class CLIPRDR_FORMAT_LIST:
 		msg = CLIPRDR_FORMAT_LIST(longnames, encoding)
 		# this is because of the terrible protocol design...
 		for _ in range(255):
-			print(1)
 			if buff.read(1) == b'':
 				break
 			buff.seek(-1,1)

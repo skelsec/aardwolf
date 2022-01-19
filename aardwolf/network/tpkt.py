@@ -10,7 +10,6 @@ class TPKTNetwork:
 
 		self.out_queue = asyncio.Queue()
 		self.in_queue = asyncio.Queue()
-		self.fastpath_in_queue = asyncio.Queue()
 		
 		self.disconnected = asyncio.Event()
 
@@ -56,14 +55,17 @@ class TPKTNetwork:
 						if len(self.__buffer)>=msgsize:
 							if is_fastpath is False:
 								msg = TPKT.from_bytes(self.__buffer[:msgsize])
-								await self.in_queue.put( (msg.tpdu, None) )
+								await self.in_queue.put( (is_fastpath, msg.tpdu, None) )
 								self.__buffer = self.__buffer[msgsize:]
 								msgsize = None
 							else:
-								await self.fastpath_in_queue.put( (self.__buffer[:msgsize], None) )
+								await self.in_queue.put( (is_fastpath, self.__buffer[:msgsize], None) )
 								self.__buffer = self.__buffer[msgsize:]
 								msgsize = None
 								is_fastpath = False
+						
+							if len(self.__buffer) > 0:
+								continue
 
 					data, err = await self.transport.in_queue.get()
 					if err is not None:
@@ -90,9 +92,7 @@ class TPKTNetwork:
 		finally:
 			if self.__soft_switch is False:
 				if self.in_queue is not None:
-					await self.in_queue.put( (None, lasterror) )
-				if self.fastpath_in_queue is not None:
-					await self.fastpath_in_queue.put( (None, lasterror) )
+					await self.in_queue.put( (None, None, lasterror) )
 				await self.disconnect()
 		
 	async def handle_outgoing(self):

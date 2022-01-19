@@ -12,7 +12,6 @@ from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.commons.queuedata import RDPDATATYPE
 from aardwolf.commons.queuedata.keyboard import RDP_KEYBOARD_SCANCODE
 from aardwolf.commons.queuedata.mouse import RDP_MOUSE
-from aardwolf.utils.qt import RDPBitmapToQtImage
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, qApp, QLabel
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThread, Qt
@@ -86,8 +85,7 @@ class RDPInterfaceThread(QObject):
 				if data is None:
 					return
 				if data.type == RDPDATATYPE.VIDEO:
-					image = RDPBitmapToQtImage(data.width, data.height, data.bitsPerPixel, data.is_compressed, data.data)
-					ri = RDPImage(data.x, data.y, image, data.height, data.width)
+					ri = RDPImage(data.x, data.y, data.data, data.height, data.width)
 					self.result.emit(ri)
 				elif data.type == RDPDATATYPE.CLIPBOARD_READY:
 					continue
@@ -274,8 +272,10 @@ def main():
 
 	if args.verbose == 1:
 		logger.setLevel(logging.INFO)
-	elif args.verbose > 1:
+	elif args.verbose == 2:
 		logger.setLevel(logging.DEBUG)
+	elif args.verbose > 2:
+		logger.setLevel(1)
 
 	width, height = args.res.upper().split('X')
 	height = int(height)
@@ -286,6 +286,7 @@ def main():
 	iosettings.video_height = height
 	iosettings.video_bpp_min = 15 #servers dont support 8 any more :/
 	iosettings.video_bpp_max = args.bpp
+	iosettings.video_out_format = 'qt'
 	
 	settings = RDPClientConsoleSettings(args.url, iosettings)
 	settings.mhover = args.no_mouse_hover

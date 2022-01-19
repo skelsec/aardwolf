@@ -51,12 +51,12 @@ class RDPECLIPChannel(Channel):
 				
 				else:
 					if not pyperclip.is_available():
-						print("pyperclip - Copy functionality unavailable!")
+						print("pyperclip - Copy functionality available!")
 
 
 			self.channel_data_monitor_task = asyncio.create_task(self.channel_data_monitor())
 			#self.process_msg_in_task = asyncio.create_task(self.process_msg_in_task())
-			return True, False
+			return True, None
 		except Exception as e:
 			return None, e
 
@@ -73,34 +73,14 @@ class RDPECLIPChannel(Channel):
 						raise NotImplementedError('Compression not implemented!')
 				else:
 					raise NotImplementedError('Chunked send not implemented!')
-				
-				print('CLIPBOARD MESSAGE OUT!!!!')
-				if self.connection.cryptolayer is not None and ChannelOption.ENCRYPT_RDP in self.options:
-					sec_hdr = TS_SECURITY_HEADER()
-					print('PacketCount: %s' % self.connection.cryptolayer.PacketCount)
-					data = packet
-					if self.connection.cryptolayer.use_encrypted_mac is True:
-						checksum = self.connection.cryptolayer.calc_salted_mac(data)
-						sec_hdr.flags |= SEC_HDR_FLAG.SECURE_CHECKSUM
-					else:
-						checksum = self.connection.cryptolayer.calc_mac(data)
-						
-					# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/9791c9e2-e5be-462f-8c23-3404c4af63b3
-					enc_data = self.connection.cryptolayer.client_enc(data)
-						
-					data = checksum + enc_data
-					packet = sec_hdr.to_bytes() + data
 
-				data_wrapper = {
-					'initiator': self.connection._initiator, 
-					'channelId': self.channel_id, 
-					'dataPriority': 'high',
-					'segmentation': (b'\xc0', 2), 
-					'userData': packet
-				}
-				userdata_wrapped = self.connection._t125_per_codec.encode('DomainMCSPDU', ('sendDataRequest', data_wrapper))
-				#print('clipboard sending -> %s' % userdata_wrapped)
-				await self.raw_out_queue.put(userdata_wrapped)
+				sec_hdr = None
+				if self.connection.cryptolayer is not None:
+					sec_hdr = TS_SECURITY_HEADER()
+					sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+					sec_hdr.flagsHi = 0
+
+				await self.connection.handle_out_data(packet, sec_hdr, None, None, self.channel_id, False)
 
 			return True, False
 		except Exception as e:
@@ -147,7 +127,6 @@ class RDPECLIPChannel(Channel):
 			hdr = CLIPRDR_HEADER.from_bytes(self.__buffer)
 
 			if self.status == CLIPBRDSTATUS.RUNNING:
-				print(hdr)
 				if hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
 					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(self.__buffer[8:8+hdr.dataLen], longnames=CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags, encoding='ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le')
 					self.current_server_formats = {}

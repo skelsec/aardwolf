@@ -45,7 +45,7 @@ class CHANNEL_PDU_HEADER:
 			hdr.length = length
 		hdr.data = data
 		hdr.flags = flags
-		return hdr.to_bytes()
+		return hdr
 
 	def __repr__(self):
 		t = '==== CHANNEL_PDU_HEADER ====\r\n'
