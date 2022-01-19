@@ -205,7 +205,6 @@ class TS_UD_SC_SEC1:
 
 		if msg.serverCertLen > 0:
 			msg.serverCertificate = SERVER_CERTIFICATE.from_bytes(buff.read(msg.serverCertLen))
-			print(msg.serverCertificate)
 		
 		return msg
 

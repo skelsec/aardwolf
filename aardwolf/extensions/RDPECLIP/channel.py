@@ -15,6 +15,7 @@ from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
 from aardwolf.commons.queuedata import *
 from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA_TXT
+from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
 
 class CLIPBRDSTATUS(enum.Enum):
 	WAITING_SERVER_INIT = enum.auto()
@@ -50,12 +51,12 @@ class RDPECLIPChannel(Channel):
 				
 				else:
 					if not pyperclip.is_available():
-						print("pyperclip - Copy functionality unavailable!")
+						print("pyperclip - Copy functionality available!")
 
 
 			self.channel_data_monitor_task = asyncio.create_task(self.channel_data_monitor())
 			#self.process_msg_in_task = asyncio.create_task(self.process_msg_in_task())
-			return True, False
+			return True, None
 		except Exception as e:
 			return None, e
 
@@ -73,16 +74,13 @@ class RDPECLIPChannel(Channel):
 				else:
 					raise NotImplementedError('Chunked send not implemented!')
 
-				data_wrapper = {
-					'initiator': self.connection._initiator, 
-					'channelId': self.channel_id, 
-					'dataPriority': 'high',
-					'segmentation': (b'\xc0', 2), 
-					'userData': packet
-				}
-				userdata_wrapped = self.connection._t125_per_codec.encode('DomainMCSPDU', ('sendDataRequest', data_wrapper))
-				#print('clipboard sending -> %s' % userdata_wrapped)
-				await self.raw_out_queue.put(userdata_wrapped)
+				sec_hdr = None
+				if self.connection.cryptolayer is not None:
+					sec_hdr = TS_SECURITY_HEADER()
+					sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+					sec_hdr.flagsHi = 0
+
+				await self.connection.handle_out_data(packet, sec_hdr, None, None, self.channel_id, False)
 
 			return True, False
 		except Exception as e:
@@ -129,7 +127,6 @@ class RDPECLIPChannel(Channel):
 			hdr = CLIPRDR_HEADER.from_bytes(self.__buffer)
 
 			if self.status == CLIPBRDSTATUS.RUNNING:
-				print(hdr)
 				if hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
 					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(self.__buffer[8:8+hdr.dataLen], longnames=CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags, encoding='ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le')
 					self.current_server_formats = {}
@@ -226,7 +223,8 @@ class RDPECLIPChannel(Channel):
 				if err is not None:
 					await self.out_queue.put((data, err))
 					raise err
-				#print('Channel data in! "%s(%s)" <- %s' % (self.name, self.channel_id, data))
+				#print('Channel data in! "%s(%s)" <- %s' % (self.name, self.channel_id, data))		
+				
 				channeldata = CHANNEL_PDU_HEADER.from_bytes(data)
 				#print('channeldata %s' % channeldata)
 				self.__buffer += channeldata.data

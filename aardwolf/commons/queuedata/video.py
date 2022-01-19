@@ -2,7 +2,7 @@ import enum
 from aardwolf.protocol.fastpath.bitmap import TS_BITMAP_FLAG, TS_BITMAP_DATA
 
 from aardwolf.commons.queuedata import RDPDATATYPE
-
+from aardwolf.utils.rectconvert import rectconvert
 
 class RDP_VIDEO:
 	def __init__(self):
@@ -16,7 +16,7 @@ class RDP_VIDEO:
 		self.data:bytes = None
 	
 	@staticmethod
-	def from_bitmapdata(bitmapdata:TS_BITMAP_DATA): #TS_BITMAP_DATA
+	def from_bitmapdata(bitmapdata:TS_BITMAP_DATA, data_format = 'qt'): #TS_BITMAP_DATA
 		res = RDP_VIDEO()
 		res.type = RDPDATATYPE.VIDEO
 		res.x = bitmapdata.destLeft
@@ -25,5 +25,17 @@ class RDP_VIDEO:
 		res.height = bitmapdata.destBottom - bitmapdata.destTop + 1
 		res.bitsPerPixel = bitmapdata.bitsPerPixel
 		res.is_compressed = TS_BITMAP_FLAG.BITMAP_COMPRESSION in bitmapdata.flags
-		res.data = bitmapdata.bitmapDataStream
+		res.data = rectconvert(res.width, res.height, res.bitsPerPixel, res.is_compressed, bitmapdata.bitmapDataStream, data_format)
 		return res
+
+	def __repr__(self):
+		t = '==== RDP_VIDEO ====\r\n'
+		for k in self.__dict__:
+			if isinstance(self.__dict__[k], enum.IntFlag):
+				value = self.__dict__[k]
+			elif isinstance(self.__dict__[k], enum.Enum):
+				value = self.__dict__[k].name
+			else:
+				value = self.__dict__[k]
+			t += '%s: %s\r\n' % (k, value)
+		return t

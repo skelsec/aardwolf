@@ -2,6 +2,7 @@ import asyncio
 
 import logging
 import traceback
+import socket
 #from aardwolf import logger
 #from aardwolf.commons.exceptions import *
 
@@ -110,6 +111,13 @@ class TCPSocket:
 			
 			try:
 				self.reader, self.writer = await asyncio.wait_for(con, int(self.settings.timeout))
+				#sock = self.writer.transport.get_extra_info('socket')
+				#if sock is not None:
+				#	sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+				#	sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)
+				#	sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3)
+				#	sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)
+
 			except asyncio.TimeoutError:
 				logging.debug('[TCPSocket] Connection timeout')
 				raise Exception('[TCPSocket] Connection timeout')

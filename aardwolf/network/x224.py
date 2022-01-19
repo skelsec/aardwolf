@@ -51,7 +51,7 @@ class X224Network:
 			#print(X224Packet.from_bytes(conreq.to_bytes()))
 
 			await self.transport.out_queue.put(conreq.to_bytes())
-			reply, err = await self.in_queue.get()
+			is_fastpath, reply, err = await self.in_queue.get()
 			if err is not None:
 				raise err
 			if reply.CR != TPDU_TYPE.CONNECTION_CONFIRM:
@@ -78,16 +78,18 @@ class X224Network:
 			buffer = b''
 			while not self.disconnected.is_set():	
 				try:
-					data, err = await self.transport.in_queue.get()
+					is_fastpath, data, err = await self.transport.in_queue.get()
 					if err is not None:
 						raise err
 					if data is None:
 						return
 
-					#print('X224Net <- %s' % data.hex())
-					packet = X224Packet.from_bytes(data)
-					#print('X224Net (packet) <- %s' % packet)
-					await self.in_queue.put((packet, None))
+					packet = data
+					if is_fastpath is False:
+						#print('X224Net <- %s' % data.hex())
+						packet = X224Packet.from_bytes(data)
+						#print('X224Net (packet) <- %s' % packet)
+					await self.in_queue.put((is_fastpath, packet, None))
 				except asyncio.CancelledError as e:
 					lasterror = e
 					break
@@ -105,7 +107,7 @@ class X224Network:
 
 		finally:
 			if self.in_queue is not None:
-				await self.in_queue.put( (None, lasterror) )
+				await self.in_queue.put( (None, None, lasterror) )
 			await self.disconnect()
 		
 	async def handle_outgoing(self):

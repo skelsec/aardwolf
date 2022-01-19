@@ -1,5 +1,6 @@
+from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU
+import rle                                                                 
 from PyQt5.QtGui import QImage, QTransform
-import rle
 
 def RDPBitmapToQtImage(width, height, bitsPerPixel, isCompress, data):
 	"""

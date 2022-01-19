@@ -8,6 +8,7 @@ class RDPIOSettings:
 		self.video_bpp_min = 16 #minimum supported bpp
 		self.video_bpp_max = 16 #max supported bpp
 		self.video_bpp_supported = [15, 16, 24, 32]
+		self.video_out_format = 'qt' # the recatngle image format which will be sent via the queue
 
 		self.keyboard_layout = 1033
 		self.keyboard_type = 4

@@ -1,3 +1,4 @@
+import traceback
 import uuid
 import asyncio
 import logging
@@ -8,11 +9,8 @@ from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.examples.scancommons.targetgens import *
 from aardwolf.examples.scancommons.internal import *
 from aardwolf.examples.scancommons.utils import *
-from aardwolf.connection import RDPConnection
 from aardwolf.commons.queuedata import RDPDATATYPE
-from aardwolf.utils.qt import RDPBitmapToQtImage
-from PyQt5.QtGui import QPainter, QImage
-
+from PIL import Image
 from tqdm import tqdm
 
 class EnumResultFinal:
@@ -61,17 +59,16 @@ class RDPScreenGrabberScanner:
 		self.__total_errors = 0
 
 	async def __executor(self, tid, target):
-		async def get_image(buffer, ext_out_queue):
+		async def get_image(buffer:Image, ext_out_queue):
 			try:
 				while True:
 					data = await ext_out_queue.get()
 					if data is None:
-						return
+						return None, None
 					if data.type == RDPDATATYPE.VIDEO:
-						image = RDPBitmapToQtImage(data.width, data.height, data.bitsPerPixel, data.is_compressed, data.data)
-						with QPainter(buffer) as qp:
-							qp.drawImage(data.x, data.y, image, 0, 0, data.width, data.height)
-						
+						buffer.paste(data.data, (data.x, data.y))
+				
+				return None, None
 
 			except Exception as e:
 				return None, e
@@ -83,7 +80,7 @@ class RDPScreenGrabberScanner:
 			if err is not None:
 				raise err
 			
-			buffer = QImage(self.iosettings.video_width, self.iosettings.video_height, QImage.Format_RGB32)
+			buffer = Image.new('RGBA', (self.iosettings.video_width, self.iosettings.video_height))
 
 			try:
 				await asyncio.wait_for(get_image(buffer, connection.ext_out_queue), self.screentime)
@@ -91,8 +88,8 @@ class RDPScreenGrabberScanner:
 				pass
 			
 			if self.ext_result_q is None:
-				filename = 'screen_%s_%s.jpg' % (target, tid)
-				buffer.save(filename,'jpg')
+				filename = 'screen_%s_%s.png' % (target, tid)
+				buffer.save(filename,'png')
 				await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.RESULT))
 			else:
 				await self.res_q.put(EnumResult(tid, target, buffer, status = EnumResultStatus.RESULT))
@@ -100,6 +97,7 @@ class RDPScreenGrabberScanner:
 		except asyncio.CancelledError:
 			return
 		except Exception as e:
+			traceback.print_exc()
 			await self.res_q.put(EnumResult(tid, target, None, error = e, status = EnumResultStatus.ERROR))
 		finally:
 			await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.FINISHED))
@@ -279,7 +277,7 @@ async def amain():
 
 	parser = argparse.ArgumentParser(description='RDP Screen grabber', formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument('-v', '--verbose', action='count', default=0)
-	parser.add_argument('--screentime', type=int, default=1, help='Time to wait for desktop image')
+	parser.add_argument('--screentime', type=int, default=5, help='Time to wait for desktop image')
 	parser.add_argument('-w', '--worker-count', type=int, default=50, help='Parallell count')
 	parser.add_argument('-o', '--out-dir', help='Output directory path.')
 	parser.add_argument('--progress', action='store_true', help='Show progress bar')
@@ -301,6 +299,7 @@ async def amain():
 	rdp_url = args.url
 
 	iosettings = RDPIOSettings()
+	iosettings.video_out_format = 'pil'
 
 	enumerator = RDPScreenGrabberScanner(
 		rdp_url,

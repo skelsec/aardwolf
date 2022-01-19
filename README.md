@@ -27,3 +27,4 @@ As usual the scripts take the target/scredentials in URL format. Below some exam
 # Additional info
  - installing in venv will require installing Qt5 outside of venv, then installing 'wheel' and 'vext.pyqt5' in the venv via pip first. then install pyqt5 in the venv
  - installing Qt5 can be a nightmare
+ - generally on ubuntu you can use `apt install python3-pyqt5` before installing `aardwolf` and it will (should) work
