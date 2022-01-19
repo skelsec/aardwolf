@@ -50,7 +50,7 @@ from aardwolf.channels import Channel
 from aardwolf.extensions.RDPECLIP.channel import RDPECLIPChannel
 
 class RDPConnection:
-	def __init__(self, target, credentials, iosettings:RDPIOSettings, authapi = None, channels = [RDPECLIPChannel], supported_protocols = SUPP_PROTOCOLS.RDP):
+	def __init__(self, target, credentials, iosettings:RDPIOSettings, authapi = None, channels = [RDPECLIPChannel], supported_protocols = None):
 		# supported_protocols if None: it will be determined automatically. otherwise  select one or more from these SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
 		self.target = target
 		self.credentials = credentials
@@ -174,6 +174,9 @@ class RDPConnection:
 					# not sending any passwords, hoping HYBRID is not required
 					self.client_x224_flags = 0
 					self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL
+				else:
+					self.client_x224_flags = 0
+					self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL | SUPP_PROTOCOLS.HYBRID_EX | SUPP_PROTOCOLS.HYBRID
 			
 			logger.debug('Client protocol flags: %s' % self.client_x224_flags)
 			logger.debug('Client protocol offer: %s' % self.client_x224_supported_protocols)
