@@ -1,6 +1,7 @@
 import os
 from hashlib import md5, sha1
-from aardwolf.crypto.symmetric import RC4
+#from aardwolf.crypto.symmetric import RC4
+from arc4 import ARC4 as RC4
 
 class RDPCryptoLayer:
 	def __init__(self, ServerRandom, keysize = 128, is_FIPS = False):

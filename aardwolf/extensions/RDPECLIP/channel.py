@@ -1,12 +1,10 @@
 
-import pyperclip
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPRDR_LONG_FORMAT_NAME
 import asyncio
 import traceback
 import enum
 
 from aardwolf import logger
-from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.channels import Channel
 from aardwolf.protocol.T124.userdata.constants import ChannelOption
 from aardwolf.extensions.RDPECLIP.protocol import *
@@ -25,7 +23,7 @@ class CLIPBRDSTATUS(enum.Enum):
 
 class RDPECLIPChannel(Channel):
 	name = 'cliprdr'
-	def __init__(self, iosettings:RDPIOSettings):
+	def __init__(self, iosettings):
 		Channel.__init__(self, self.name, ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP|ChannelOption.COMPRESS_RDP|ChannelOption.SHOW_PROTOCOL)
 		self.use_pyperclip = iosettings.clipboard_use_pyperclip
 		self.status = CLIPBRDSTATUS.WAITING_SERVER_INIT
@@ -48,7 +46,7 @@ class RDPECLIPChannel(Channel):
 					import pyperclip
 				except ImportError:
 					print('Could not import pyperclip! Copy-paste will not work!')
-				
+					self.use_pyperclip = False
 				else:
 					if not pyperclip.is_available():
 						print("pyperclip - Copy functionality available!")
