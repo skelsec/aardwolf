@@ -20,12 +20,9 @@ rle_module = Extension('rle',
 )
 
 install_requires = []
-#if platform.system().lower() == 'windows':
-#	install_requires.append('pyqt5==5.12.3')
-#	install_requires.append('pyqt5-sip==12.7.0')
-#elif platform.system().lower() != 'emscripten':
-#	install_requires.append('PyQt5')
-#	install_requires.append('PyQt5-sip')
+if platform.system().lower() == 'windows':
+	install_requires.append('pyqt5==5.12.3')
+	install_requires.append('pyqt5-sip==12.7.0')
 	
 
 setup(
@@ -71,7 +68,7 @@ setup(
 		'pycryptodomex',
 		'pyperclip>=1.8.2',
 		'arc4>=0.0.4',
-		#'Pillow>9.0.0',
+		'Pillow>=9.0.0',
 	] + install_requires,
 	
 	
