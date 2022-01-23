@@ -1,5 +1,6 @@
 
 import os
+from aardwolf import logger
 from aardwolf.authentication.spnego.native import SPNEGO
 from aardwolf.authentication.credssp.messages.asn1_structs import *
 from hashlib import sha256
@@ -42,7 +43,7 @@ class CredSSPAuth:
 					if self.__internal_auth_continue is True:
 						tdata = TSRequest.load(token)
 						if tdata.native['version'] < self.version:
-							print('[CREDSSP] Server supports version %s which is smaller than our supported version %s' % (tdata.native['version'], self.version))
+							logger.debug('[CREDSSP] Server supports version %s which is smaller than our supported version %s' % (tdata.native['version'], self.version))
 							self.version = tdata.native['version']
 						if tdata.native['negoTokens'] is None:
 							raise Exception('SSPI auth not supported by server')

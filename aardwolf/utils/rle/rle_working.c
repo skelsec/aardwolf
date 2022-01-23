@@ -17,14 +17,6 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/*
-Added few modifications:
-The code now ALWAYS returns RGB32 format regardless of input bpp. Makes life easier on upper levels.
-The code also takes non-compressed input (and a flag that indicates wether it's compressed or not.)
-Non-compressed data will be only converted to RGB32.
-Mod author: Tamas Jos @skelsec
-*/
-
 /* three seperate function for speed when decompressing the bitmaps
    when modifing one function make the change in the others
    jay.sorg@gmail.com */
@@ -925,96 +917,25 @@ bitmap_decompress(uint8 * output, int width, int height, uint8* input, int size,
 	return rv;
 }
 
-static void
-convert_rgb555_rgb32(uint8 *decomp_buff, int decomp_buff_size, uint8 *dst, int dst_size){
-	int j = 0;
-	for(int i =0; i< decomp_buff_size; i=i+2){
-		int t = (decomp_buff[i+1] << 8) + decomp_buff[i];
-		dst[j] = t >> 8;
-		dst[j+1] = ((t >> 5) & 0b11111) << 3;
-		dst[j+2] = (t & 0x1F) << 3;
-		dst[j+3] = 0xff;
-		j = j+4;
-	}
-}
-
-static void
-convert_rgb565_rgb32(uint8 *decomp_buff, int decomp_buff_size, uint8 *dst, int dst_size){
-	int j = 0;
-	for(int i =0; i< decomp_buff_size; i=i+2){
-		int t = (decomp_buff[i+1] << 8) + decomp_buff[i];
-		dst[j] = t >> 8;
-		dst[j+1] = ((t >> 5) & 0b111111) << 2;
-		dst[j+2] = (t & 0x1F) << 3;
-		dst[j+3] = 0xff;
-		j = j+4;
-	}
-}
-
-static void
-convert_rgb24_rgb32(uint8 *decomp_buff, int decomp_buff_size, uint8 *dst, int dst_size){
-	int j = 0;
-	for(int i =0; i< decomp_buff_size; i=i+3){
-		dst[j] = decomp_buff[i];
-		dst[j+1] = decomp_buff[i+1];
-		dst[j+2] = decomp_buff[i+2];
-		dst[j+3] = 0xff;
-		j = j+4;
-	}
-}
-
 /* *INDENT-ON* */
 
 static PyObject*
 bitmap_decompress_wrapper(PyObject* self, PyObject* args)
 {
 	Py_buffer output, input;
-	int width = 0, height = 0, bpp = 0, bitsperpixel = 0, isCompressed = 0;
-	int decomp_size = 0;
-	uint8 *decomp_buffer = NULL;
+	int width = 0, height = 0, bpp = 0;
 
-	if (!PyArg_ParseTuple(args, "s*iis*iii", &output, &width, &height, &input, &bitsperpixel, &bpp, &isCompressed)){
+	if (!PyArg_ParseTuple(args, "s*iis*i", &output, &width, &height, &input, &bpp)){
 		PyErr_SetString(PyExc_TypeError, "Input parameter error");
 		return (PyObject *) NULL;
 	}
-	
-	if(isCompressed){
-		decomp_size = width * height * bpp;
-		decomp_buffer = (uint8*)malloc(decomp_size);
+		
 
-		if(decomp_buffer == NULL){
-			PyErr_SetString(PyExc_TypeError, "malloc failed!");
-			return (PyObject *) NULL;
-		}
-
-		if(bitmap_decompress(decomp_buffer, width, height, (uint8*)input.buf, input.len, bpp) == False){
-			free(decomp_buffer);
-			PyErr_SetString(PyExc_TypeError, "Decompression error");
-			return (PyObject *) NULL;
-		}
+	if(bitmap_decompress((uint8*)output.buf, width, height, (uint8*)input.buf, input.len, bpp) == False){
+		PyErr_SetString(PyExc_TypeError, "Decompression error");
+		return (PyObject *) NULL;
 	}
-	else{
-		decomp_buffer = (uint8*)input.buf;
-		decomp_size = input.len;
-	}
-	
-
-	switch(bitsperpixel){
-		case 15:
-			convert_rgb555_rgb32(decomp_buffer, decomp_size, (uint8*)output.buf, output.len);
-			break;
-		case 16:
-			convert_rgb565_rgb32(decomp_buffer, decomp_size, (uint8*)output.buf, output.len);
-			break;
-		case 24:
-			convert_rgb24_rgb32(decomp_buffer, decomp_size, (uint8*)output.buf, output.len);
-			break;
-		case 32:
-			break;
-	}
-	if(isCompressed){
-		free(decomp_buffer);
-	}
+		
 
 	Py_RETURN_NONE;
 }
@@ -1038,11 +959,10 @@ static volatile int *_dummy_malloc;
 
 PyMODINIT_FUNC PyInit_rle(void)
 {
-    // This is for pyodide for some reason it didn't work without it.
+    
 	_dummy_malloc = (int *)malloc(sizeof(int));
     *_dummy_malloc = 1;
     free((void *)_dummy_malloc);
-	// yup.
 
 	PyObject *m = PyModule_Create(&cModPyDem);
 	return m;

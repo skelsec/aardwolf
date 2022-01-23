@@ -1,6 +1,4 @@
 
-from ctypes import POINTER
-from aardwolf.authentication import credssp
 import traceback
 import asyncio
 import typing
@@ -9,12 +7,9 @@ from collections import OrderedDict
 
 import asn1tools
 from aardwolf import logger
-from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.network.selector import NetworkSelector
-from aardwolf.commons.credential import RDPCredentialsSecretType, RDPAuthProtocol
+from aardwolf.commons.credential import RDPCredentialsSecretType
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
-from aardwolf.protocol import x224
-from aardwolf.protocol.T124.userdata.serversecuritydata import TS_UD_SC_SEC1
 from aardwolf.transport.ssl import SSLClientTunnel
 from aardwolf.network.tpkt import TPKTNetwork
 from aardwolf.network.x224 import X224Network
@@ -47,15 +42,15 @@ from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FA
 from aardwolf.commons.queuedata import *
 from aardwolf.commons.authbuilder import AuthenticatorBuilder
 from aardwolf.channels import Channel
-from aardwolf.extensions.RDPECLIP.channel import RDPECLIPChannel
+
 
 class RDPConnection:
-	def __init__(self, target, credentials, iosettings:RDPIOSettings, authapi = None, channels = [RDPECLIPChannel], supported_protocols = None):
-		# supported_protocols if None: it will be determined automatically. otherwise  select one or more from these SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
+	def __init__(self, target, credentials, iosettings):
 		self.target = target
 		self.credentials = credentials
-		self.authapi = authapi
+		self.authapi = None
 		self.iosettings = iosettings
+		self.disconnected_evt = asyncio.Event() #this will be set if we disconnect for whatever reason
 
 		# these are the main queues with which you can communicate with the server
 		# ext_out_queue: yields video data
@@ -80,7 +75,7 @@ class RDPConnection:
 		self.__channel_id_lookup = {}
 		self.__joined_channels =  OrderedDict({})
 		
-		for channel in channels:
+		for channel in self.iosettings.channels:
 			self.__joined_channels[channel.name] = channel(self.iosettings)
 		
 		self.__channel_task = {} #name -> channeltask
@@ -90,7 +85,7 @@ class RDPConnection:
 		self.__external_reader_task = None
 		self.__x224_reader_task = None
 		self.client_x224_flags = 0
-		self.client_x224_supported_protocols = supported_protocols 
+		self.client_x224_supported_protocols = self.iosettings.supported_protocols 
 		self.cryptolayer:RDPCryptoLayer = None
 		self.__fastpath_in_queue = None
 
@@ -101,6 +96,7 @@ class RDPConnection:
 				await self.__joined_channels[name].disconnect()
 			
 			if self.ext_out_queue is not None:
+				# signaling termination via ext_out_queue
 				await self.ext_out_queue.put(None)
 				
 			
@@ -123,6 +119,8 @@ class RDPConnection:
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
+		finally:
+			self.disconnected_evt.set()
 	
 	async def __aenter__(self):
 		return self
@@ -267,6 +265,7 @@ class RDPConnection:
 			logger.debug('RDP connection sequence done')
 			return True, None
 		except Exception as e:
+			self.disconnected_evt.set()
 			return None, e
 	
 	async def credssp_auth(self):
@@ -658,28 +657,6 @@ class RDPConnection:
 			sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(info, sec_hdr, None, None, self.__joined_channels['MCS'].channel_id, False)
-
-			### ENCTEST!!!!
-			#response, err = await self._x224net.in_queue.get()
-			#if err is not None:
-			#	raise err
-			#response_parsed = self._t125_per_codec.decode('DomainMCSPDU', response.data)
-			#if response_parsed[0] != 'sendDataIndication':
-			#	print('WWWAAAAAAA')
-			#print(response_parsed[1]['userData'])
-			#sec_hdr = TS_SECURITY_HEADER.from_bytes(response_parsed[1]['userData'])
-			#print(sec_hdr)
-			#if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
-			#	dec = self.cryptolayer.client_dec(response_parsed[1]['userData'][12:])
-			#	print(dec)
-			#	dec = self.cryptolayer.client_enc(response_parsed[1]['userData'][12:])
-			#	print(dec)
-			#	dec = self.cryptolayer.server_enc(response_parsed[1]['userData'][12:])
-			#	print(dec)
-			#	dec = self.cryptolayer.server_dec(response_parsed[1]['userData'][12:])
-			#	print(dec)
-
-
 			return True, None
 		except Exception as e:
 			return None, e
@@ -965,6 +942,8 @@ class RDPConnection:
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
+		finally:
+			await self.terminate()
 
 	async def __fastpath_reader(self):
 		# Fastpath was introduced to the RDP specs to speed up data transmission
@@ -1003,6 +982,8 @@ class RDPConnection:
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
+		finally:
+			await self.terminate()
 	
 	async def __external_reader(self):
 		# This coroutine handles keyboard/mouse etc input from the user
@@ -1039,11 +1020,35 @@ class RDPConnection:
 						sec_hdr.flagsHi = 0
 
 					await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+				
+				if indata.type == RDPDATATYPE.KEYUNICODE:
+					indata = cast(RDP_KEYBOARD_UNICODE, indata)
+					data_hdr = TS_SHAREDATAHEADER()
+					data_hdr.shareID = 0x103EA
+					data_hdr.streamID = STREAM_TYPE.MED
+					data_hdr.pduType2 = PDUTYPE2.INPUT
+					
+					kbi = TS_UNICODE_KEYBOARD_EVENT()
+					kbi.unicodeCode = indata.char
+					kbi.keyboardFlags = 0
+					if indata.is_pressed is False:
+						kbi.keyboardFlags |= KBDFLAGS.RELEASE
+					clii_kb = TS_INPUT_EVENT.from_input(kbi)
+					cli_input = TS_INPUT_PDU_DATA()
+					cli_input.slowPathInputEvents.append(clii_kb)
+
+					sec_hdr = None
+					if self.cryptolayer is not None:
+						sec_hdr = TS_SECURITY_HEADER()
+						sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+						sec_hdr.flagsHi = 0
+
+					await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
 			
 				elif indata.type == RDPDATATYPE.MOUSE:
+					indata = cast(RDP_MOUSE, indata)
 					if indata.xPos < 0 or indata.yPos < 0:
 						continue
-					indata = cast(RDP_MOUSE, indata)
 					data_hdr = TS_SHAREDATAHEADER()
 					data_hdr.shareID = 0x103EA
 					data_hdr.streamID = STREAM_TYPE.MED
@@ -1082,7 +1087,7 @@ class RDPConnection:
 
 				elif indata.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
 					if 'cliprdr' not in self.__joined_channels:
-						print('Got clipboard data but no clipboard channel setup!')
+						logger.debug('Got clipboard data but no clipboard channel setup!')
 						continue
 					await self.__joined_channels['cliprdr'].in_queue.put(indata)
 
