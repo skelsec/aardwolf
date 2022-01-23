@@ -90,7 +90,7 @@ class RDPInterfaceThread(QObject):
 				elif data.type == RDPDATATYPE.CLIPBOARD_READY:
 					continue
 				else:
-					print('Unknown incoming data: %s'% data)
+					logger.debug('Unknown incoming data: %s'% data)
 
 
 		except Exception as e:
@@ -182,8 +182,7 @@ class RDPClientQTGUI(QMainWindow):
 			ki.data = pyperclip.paste()
 			self.in_q.put(ki)
 
-
-
+		#print('SCANCODE: %s' % e.nativeScanCode())
 		ki = RDP_KEYBOARD_SCANCODE()
 		ki.keyCode = e.nativeScanCode()
 		ki.is_pressed = True
@@ -253,9 +252,6 @@ class RDPClientQTGUI(QMainWindow):
 
 		self.in_q.put(mi)
 	
-
-
-
 
 def main():
 	import logging

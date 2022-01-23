@@ -45,11 +45,11 @@ class RDPECLIPChannel(Channel):
 				try:
 					import pyperclip
 				except ImportError:
-					print('Could not import pyperclip! Copy-paste will not work!')
+					logger.info('Could not import pyperclip! Copy-paste will not work!')
 					self.use_pyperclip = False
 				else:
 					if not pyperclip.is_available():
-						print("pyperclip - Copy functionality available!")
+						logger.info("pyperclip - Copy functionality available!")
 
 
 			self.channel_data_monitor_task = asyncio.create_task(self.channel_data_monitor())
@@ -131,12 +131,11 @@ class RDPECLIPChannel(Channel):
 					for fmte in fmtl.templist:
 						self.current_server_formats[fmte.formatId] = fmte
 					
-					#print(self.current_server_formats)
 					# sending back an OK
 					msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST_RESPONSE, CB_FLAG.CB_RESPONSE_OK, None)
 					await self.channel_data_out_q.put(msg)
 
-					if self.use_pyperclip is True and CLIPBRD_FORMAT.CF_UNICODETEXT in self.current_server_formats.keys():
+					if CLIPBRD_FORMAT.CF_UNICODETEXT in self.current_server_formats.keys():
 						# pyperclip is in use and server just notified us about a new text copied, so we request the text
 						# automatically
 						self.__requested_format = CLIPBRD_FORMAT.CF_UNICODETEXT
@@ -144,16 +143,27 @@ class RDPECLIPChannel(Channel):
 						dreq.requestedFormatId = CLIPBRD_FORMAT.CF_UNICODETEXT
 						msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_REQUEST, 0, dreq)
 						await self.channel_data_out_q.put(msg)
+
+						# notifying client that new data is available
+						msg = RDP_CLIPBOARD_NEW_DATA_AVAILABLE()
+						await self.connection.ext_out_queue.put(msg)
+
 				
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_DATA_RESPONSE:
 					if hdr.msgFlags != hdr.msgFlags.CB_RESPONSE_OK:
-						print('Server rejected our copy request!')
+						logger.debug('Server rejected our copy request!')
 					else:
 						try:
 							fmtdata = CLIPRDR_FORMAT_DATA_RESPONSE.from_bytes(self.__buffer[8:8+hdr.dataLen],otype=self.__requested_format)
 						
 							if self.use_pyperclip is True and self.__requested_format in [CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_UNICODETEXT]:
+								import pyperclip
 								pyperclip.copy(fmtdata.dataobj)
+
+							msg = RDP_CLIPBOARD_DATA_TXT()
+							msg.data = fmtdata.dataobj
+							msg.datatype = self.__requested_format
+							await self.connection.ext_out_queue.put(msg)
 						
 						except Exception as e:
 							raise e
@@ -163,7 +173,6 @@ class RDPECLIPChannel(Channel):
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_DATA_REQUEST:
 
 					fmtr = CLIPRDR_FORMAT_DATA_REQUEST.from_bytes(self.__buffer[8:8+hdr.dataLen])
-					#print(fmtr)
 					if fmtr.requestedFormatId == self.__current_clipboard_data.datatype:
 						resp = CLIPRDR_FORMAT_DATA_RESPONSE()
 						resp.dataobj = self.__current_clipboard_data.data
@@ -173,7 +182,7 @@ class RDPECLIPChannel(Channel):
 						await self.channel_data_out_q.put(msg)
 					
 					else:
-						print('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
+						logger.info('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
 						
 			
 			elif self.status == CLIPBRDSTATUS.WAITING_SERVER_INIT:
@@ -263,7 +272,7 @@ class RDPECLIPChannel(Channel):
 					self.__current_clipboard_data = data
 				
 				else:
-					print('Unhandled data type in! %s' % data.type)
+					logger.debug('Unhandled data type in! %s' % data.type)
 					continue
 
 

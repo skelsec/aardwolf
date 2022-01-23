@@ -10,7 +10,7 @@ class TS_UNICODE_KEYBOARD_EVENT:
 
 	def to_bytes(self):
 		t = self.keyboardFlags.to_bytes(2, byteorder='little', signed=False)
-		t += self.unicodeCode.to_bytes(2, byteorder='little', signed=False)
+		t += self.unicodeCode[0].encode('utf-16-le')
 		t += self.pad2Octets
 		return t
 
@@ -22,7 +22,7 @@ class TS_UNICODE_KEYBOARD_EVENT:
 	def from_buffer(buff: io.BytesIO):
 		msg = TS_UNICODE_KEYBOARD_EVENT()
 		msg.keyboardFlags = KBDFLAGS(int.from_bytes(buff.read(2), byteorder='little', signed=False))
-		msg.unicodeCode = int.from_bytes(buff.read(2), byteorder='little', signed=False)
+		msg.unicodeCode = buff.read(2).decode('utf-16-le')
 		msg.pad2Octets = buff.read(2)
 		return msg
 

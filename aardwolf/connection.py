@@ -50,6 +50,7 @@ class RDPConnection:
 		self.credentials = credentials
 		self.authapi = None
 		self.iosettings = iosettings
+		self.disconnected_evt = asyncio.Event() #this will be set if we disconnect for whatever reason
 
 		# these are the main queues with which you can communicate with the server
 		# ext_out_queue: yields video data
@@ -95,6 +96,7 @@ class RDPConnection:
 				await self.__joined_channels[name].disconnect()
 			
 			if self.ext_out_queue is not None:
+				# signaling termination via ext_out_queue
 				await self.ext_out_queue.put(None)
 				
 			
@@ -117,6 +119,8 @@ class RDPConnection:
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
+		finally:
+			self.disconnected_evt.set()
 	
 	async def __aenter__(self):
 		return self
@@ -261,6 +265,7 @@ class RDPConnection:
 			logger.debug('RDP connection sequence done')
 			return True, None
 		except Exception as e:
+			self.disconnected_evt.set()
 			return None, e
 	
 	async def credssp_auth(self):
@@ -652,28 +657,6 @@ class RDPConnection:
 			sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(info, sec_hdr, None, None, self.__joined_channels['MCS'].channel_id, False)
-
-			### ENCTEST!!!!
-			#response, err = await self._x224net.in_queue.get()
-			#if err is not None:
-			#	raise err
-			#response_parsed = self._t125_per_codec.decode('DomainMCSPDU', response.data)
-			#if response_parsed[0] != 'sendDataIndication':
-			#	print('WWWAAAAAAA')
-			#print(response_parsed[1]['userData'])
-			#sec_hdr = TS_SECURITY_HEADER.from_bytes(response_parsed[1]['userData'])
-			#print(sec_hdr)
-			#if SEC_HDR_FLAG.ENCRYPT in sec_hdr.flags:
-			#	dec = self.cryptolayer.client_dec(response_parsed[1]['userData'][12:])
-			#	print(dec)
-			#	dec = self.cryptolayer.client_enc(response_parsed[1]['userData'][12:])
-			#	print(dec)
-			#	dec = self.cryptolayer.server_enc(response_parsed[1]['userData'][12:])
-			#	print(dec)
-			#	dec = self.cryptolayer.server_dec(response_parsed[1]['userData'][12:])
-			#	print(dec)
-
-
 			return True, None
 		except Exception as e:
 			return None, e
@@ -959,6 +942,8 @@ class RDPConnection:
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
+		finally:
+			await self.terminate()
 
 	async def __fastpath_reader(self):
 		# Fastpath was introduced to the RDP specs to speed up data transmission
@@ -997,6 +982,8 @@ class RDPConnection:
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
+		finally:
+			await self.terminate()
 	
 	async def __external_reader(self):
 		# This coroutine handles keyboard/mouse etc input from the user
@@ -1041,8 +1028,8 @@ class RDPConnection:
 					data_hdr.streamID = STREAM_TYPE.MED
 					data_hdr.pduType2 = PDUTYPE2.INPUT
 					
-					kbi = TS_KEYBOARD_EVENT()
-					kbi.keyCode = indata.char
+					kbi = TS_UNICODE_KEYBOARD_EVENT()
+					kbi.unicodeCode = indata.char
 					kbi.keyboardFlags = 0
 					if indata.is_pressed is False:
 						kbi.keyboardFlags |= KBDFLAGS.RELEASE

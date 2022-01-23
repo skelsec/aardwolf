@@ -91,7 +91,6 @@ class CLIPRDR_FORMAT_LIST:
 				break
 			buff.seek(-1,1)
 			msg.templist.append(obj.from_buffer(buff))
-			print(msg.templist)
 		return msg
 
 	def __repr__(self):
