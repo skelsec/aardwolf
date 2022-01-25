@@ -31,6 +31,9 @@ class Channel:
 				self.monitor_out_task.cancel()
 			if self.monitor_in_task is not None:
 				self.monitor_in_task.cancel()
+			_, err = await self.stop()
+			if err is not None:
+				raise err
 		except:
 			pass
 
@@ -52,9 +55,16 @@ class Channel:
 
 
 	async def start(self):
+		# Override this when implementing new channel type
 		try:
 			return True, None
-
+		except Exception as e:
+			return None, e
+	
+	async def stop(self):
+		# Override this when implementing new channel type
+		try:
+			return True, None
 		except Exception as e:
 			return None, e
 

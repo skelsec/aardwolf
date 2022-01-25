@@ -117,6 +117,10 @@ class RDPClientQTGUI(QMainWindow):
 
 	def __init__(self, settings:RDPClientConsoleSettings):
 		super().__init__()
+		# these sizes dont work :(
+		#self.setMaximumSize(self.settings.iosettings.video_width, self.settings.iosettings.video_height)
+		#self.setMinimumSize(self.settings.iosettings.video_width, self.settings.iosettings.video_height)
+		#self.setFixedSize(self.settings.iosettings.video_width, self.settings.iosettings.video_height)
 		self.settings = settings
 
 		# enabling this will singificantly increase the bandwith
@@ -148,6 +152,8 @@ class RDPClientQTGUI(QMainWindow):
 
 		# setting up the canvas (qlabel) which will display the image data
 		self._label_imageDisplay = QLabel()
+		self._label_imageDisplay.setFixedSize(self.settings.iosettings.video_width, self.settings.iosettings.video_height)
+		
 		self.setCentralWidget(self._label_imageDisplay)
 		
 		# enabling mouse tracking
@@ -290,8 +296,8 @@ def main():
 
 
 	app = QApplication(sys.argv)
-	demo = RDPClientQTGUI(settings)
-	demo.show()
+	qtclient = RDPClientQTGUI(settings)
+	qtclient.show()
 	app.exec_()
 	qApp.quit()
 

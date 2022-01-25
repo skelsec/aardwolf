@@ -2,6 +2,8 @@ import traceback
 import uuid
 import asyncio
 import logging
+import copy
+import json
 
 from aardwolf import logger
 from aardwolf.commons.url import RDPConnectionURL
@@ -9,8 +11,7 @@ from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.examples.scancommons.targetgens import *
 from aardwolf.examples.scancommons.internal import *
 from aardwolf.examples.scancommons.utils import *
-from aardwolf.commons.queuedata import RDPDATATYPE
-from PIL import Image
+from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS
 from tqdm import tqdm
 
 class EnumResultFinal:
@@ -27,31 +28,50 @@ class EnumResultFinal:
 			return '[E] %s | %s | %s' % (self.target, self.err)
 
 		elif self.otype == 'result':
-			return '[S] %s ' % (self.target)
+			return '[R] %s | %s | %s' % (self.target_id, self.target, self.obj)
 
 		elif self.otype == 'progress':
 			return '[P][%s/%s][%s] %s' % (self.obj.total_finished, self.obj.total_targets, str(self.obj.gens_finished), self.obj.current_finished)
 
 		else:
 			return '[UNK]'
+	
+	def to_dict(self):
+		if self.otype == 'result':
+			return {
+				'target' : self.target,
+				'target_id' : self.target_id,
+				'result': str(self.obj),
+				'otype': self.otype,
+			}
+	
+	def to_tsv(self):
+		if self.otype == 'result':
+			return '%s\t%s\t%s' % (self.target, self.target_id, self.obj)
+	
+	def to_json(self):
+		t = self.to_dict()
+		if t is not None:
+			return json.dumps(self.to_dict())
 
 
-class RDPScreenGrabberScanner:
-	def __init__(self, rdp_url, iosettings, worker_count = 10, out_dir = None, screentime = 5, show_pbar = True, task_q = None, res_q = None, ext_result_q = None):
+class RDPLoginScanner:
+	def __init__(self, rdp_url, iosettings:RDPIOSettings, worker_count = 10, out_file = None, out_format = 'str', show_pbar = True, task_q = None, ext_result_q = None):
 		self.target_gens = []
 		self.rdp_mgr = RDPConnectionURL(rdp_url)
 		self.worker_count = worker_count
 		self.task_q = task_q
-		self.res_q = res_q
-		self.screentime = screentime
+		self.res_q = None
 		self.workers = []
 		self.result_processing_task = None
-		self.out_dir = out_dir
+		self.out_file = out_file
 		self.show_pbar = show_pbar
 		self.ext_result_q = ext_result_q
 		self.enum_url = False
+		self.out_format = out_format
 
 		self.iosettings = iosettings
+		self.flags_test = [SUPP_PROTOCOLS.HYBRID_EX, None]
 
 		self.__gens_finished = False
 		self.__total_targets = 0
@@ -59,40 +79,26 @@ class RDPScreenGrabberScanner:
 		self.__total_errors = 0
 
 	async def __executor(self, tid, target):
-		async def get_image(buffer:Image, ext_out_queue):
-			try:
-				while True:
-					data = await ext_out_queue.get()
-					if data is None:
-						return None, None
-					if data.type == RDPDATATYPE.VIDEO:
-						buffer.paste(data.data, (data.x, data.y))
-				
-				return None, None
-
-			except Exception as e:
-				return None, e
-			
-		connection = None
 		try:
-			connection = self.rdp_mgr.create_connection_newtarget(target, self.iosettings)
-			_, err = await connection.connect()
-			if err is not None:
-				raise err
-			
-			buffer = Image.new('RGBA', (self.iosettings.video_width, self.iosettings.video_height))
+			for i, proto in enumerate(self.flags_test):
+				result = 'YES'
+				if proto == None:
+					result = 'MAYBE'
+				ios = copy.deepcopy(self.iosettings)
+				ios.supported_protocols = proto
+				connection = self.rdp_mgr.create_connection_newtarget(target, ios)
+				_, err = await connection.connect()
+				if err is not None:
+					result = 'NO'
+				else:
+					await connection.terminate()
+				if result == 'NO' and i != (len(self.flags_test)-1):
+					# avoid printing NO multiple times
+					continue
 
-			try:
-				await asyncio.wait_for(get_image(buffer, connection.ext_out_queue), self.screentime)
-			except:
-				pass
-			
-			if self.ext_result_q is None:
-				filename = 'screen_%s_%s.png' % (target, tid)
-				buffer.save(filename,'png')
-				await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.RESULT))
-			else:
-				await self.res_q.put(EnumResult(tid, target, buffer, status = EnumResultStatus.RESULT))
+				await self.res_q.put(EnumResult(tid, target, result, status = EnumResultStatus.RESULT))
+				if result == 'YES':
+					break
 
 		except asyncio.CancelledError:
 			return
@@ -101,8 +107,6 @@ class RDPScreenGrabberScanner:
 			await self.res_q.put(EnumResult(tid, target, None, error = e, status = EnumResultStatus.ERROR))
 		finally:
 			await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.FINISHED))
-			if connection is not None:
-				await connection.terminate()
 			
 
 	async def worker(self):
@@ -114,7 +118,7 @@ class RDPScreenGrabberScanner:
 				
 				tid, target = indata
 				try:
-					await asyncio.wait_for(self.__executor(tid, target), timeout=self.screentime+5)
+					await asyncio.wait_for(self.__executor(tid, target), timeout=10)
 				except asyncio.CancelledError:
 					return
 				except asyncio.TimeoutError as e:
@@ -135,9 +139,12 @@ class RDPScreenGrabberScanner:
 			pbar = None
 			if self.show_pbar is True:
 				pbar = {}
-				pbar['targets']    = tqdm(desc='Targets     ', unit='', position=0)
-				pbar['screencaps'] = tqdm(desc='Screencaps  ', unit='', position=1)
-				pbar['errors']     = tqdm(desc='Conn Errors ', unit='', position=2)
+				pbar['targets']  = tqdm(desc='Targets ', unit='', position=0)
+				pbar['yes']      = tqdm(desc='Yes     ', unit='', position=1)
+				pbar['no']       = tqdm(desc='No      ', unit='', position=2)
+				pbar['maybe']    = tqdm(desc='Maybe   ', unit='', position=3)
+				pbar['errors']   = tqdm(desc='Errors  ', unit='', position=4)
+				pbar['finished'] = tqdm(desc='Finished', unit='', position=5)
 
 			out_buffer = []
 			final_iter = False
@@ -151,12 +158,24 @@ class RDPScreenGrabberScanner:
 					if self.ext_result_q is not None:
 						out_buffer = []
 
-					if len(out_buffer) >= 10 or final_iter and self.ext_result_q is None:
+					if len(out_buffer) >= 100 or final_iter and self.ext_result_q is None:
 						out_data = ''
-						if self.show_pbar is False:
+						if self.out_format == 'str':
 							out_data = '\r\n'.join([str(x) for x in out_buffer])
+						elif self.out_format == 'tsv':
+							for line in [x.to_tsv() for x in out_buffer]:
+								if line is not None:
+									out_data += line + '\r\n'
+						elif self.out_format == 'json':
+							for line in [x.to_json() for x in out_buffer]:
+								if line is not None:
+									out_data += line + '\r\n'
+						if self.out_file is None:
 							print(out_data)
 						else:
+							with open(self.out_file, 'a', newline = '') as f:
+								f.write(out_data)
+						if self.show_pbar is True:
 							for key in pbar:
 								pbar[key].refresh()
 						
@@ -195,7 +214,9 @@ class RDPScreenGrabberScanner:
 							await self.ext_result_q.put(EnumResultFinal(er.result, 'result', None, er.target, er.target_id))
 						out_buffer.append(EnumResultFinal(er.result, 'result', None, er.target, er.target_id))
 						if self.show_pbar is True:
-							pbar['screencaps'].update(1)
+							if er.result in ['YES', 'NO', 'MAYBE']:
+								pbar[er.result.lower()].update(1)
+							
 
 					if er.status == EnumResultStatus.ERROR:
 						self.__total_errors += 1
@@ -275,12 +296,13 @@ async def amain():
 	import argparse
 	import sys
 
-	parser = argparse.ArgumentParser(description='RDP Screen grabber', formatter_class=argparse.RawDescriptionHelpFormatter)
+	parser = argparse.ArgumentParser(description='RDP login scanner', formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument('-v', '--verbose', action='count', default=0)
-	parser.add_argument('--screentime', type=int, default=5, help='Time to wait for desktop image')
 	parser.add_argument('-w', '--worker-count', type=int, default=50, help='Parallell count')
-	parser.add_argument('-o', '--out-dir', help='Output directory path.')
-	parser.add_argument('--progress', action='store_true', help='Show progress bar')
+	parser.add_argument('-o', '--out-file', help='Output file path.')
+	parser.add_argument('--progress', action='store_true', help='Show progress bar. Pleasue use out-file with this!!')
+	parser.add_argument('--tsv', action='store_true', help='Output results in TSV format')
+	parser.add_argument('--json', action='store_true', help='Output results in JSON format')
 	parser.add_argument('-s', '--stdin', action='store_true', help='Read targets from stdin')
 	parser.add_argument('url', help='Connection URL base, target can be set to anything. Example: "rdp+ntlm-password://TEST\\victim:Password!1@10.10.10.2"')
 	parser.add_argument('targets', nargs='*', help = 'Hostname or IP address or file with a list of targets')
@@ -288,7 +310,7 @@ async def amain():
 	args = parser.parse_args()
 
 	if args.verbose >=1:
-		logger.setLevel(logging.DEBUG)
+		logger.setLevel(logging.WARNING)
 
 	if args.verbose > 2:
 		print('setting deepdebug')
@@ -296,19 +318,25 @@ async def amain():
 		asyncio.get_event_loop().set_debug(True)
 		logging.basicConfig(level=logging.DEBUG)
 
+	oformat = 'str'
+	if args.tsv is True:
+		oformat = 'tsv'
+	if args.json is True:
+		oformat = 'json'
+
 	rdp_url = args.url
 
 	iosettings = RDPIOSettings()
 	iosettings.channels = []
-	iosettings.video_out_format = 'pil'
+	iosettings.video_out_format = 'raw'
 
-	enumerator = RDPScreenGrabberScanner(
+	enumerator = RDPLoginScanner(
 		rdp_url,
 		iosettings,
 		worker_count = args.worker_count,
-		out_dir = args.out_dir,
+		out_file = args.out_file,
 		show_pbar = args.progress,
-		screentime = args.screentime,
+		out_format=oformat,
 	)
 	
 	notfile = []
