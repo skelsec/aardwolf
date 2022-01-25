@@ -58,6 +58,15 @@ class RDPECLIPChannel(Channel):
 		except Exception as e:
 			return None, e
 
+	async def stop(self):
+		try:
+			if self.channel_data_monitor_task is not None:
+				self.channel_data_monitor_task.cancel()
+				
+			return True, None
+		except Exception as e:
+			return None, e
+
 	async def channel_data_monitor(self):
 		try:
 			while True:
