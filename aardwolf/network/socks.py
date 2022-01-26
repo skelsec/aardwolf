@@ -1,13 +1,11 @@
-
 import enum
 import asyncio
 import ipaddress
 
-from msldap import logger
+from aardwolf import logger
 
 from asysocks.client import SOCKSClient
 from asysocks.common.comms import SocksQueueComms
-from msldap.protocol.utils import calcualte_length
 
 
 class SocksProxyConnection:
