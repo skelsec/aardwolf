@@ -205,6 +205,9 @@ class RDPCAPScan:
 				pbar['targets']    = tqdm(desc='Targets     ', unit='', position=0)
 				pbar['results']    = tqdm(desc='Results     ', unit='', position=1)
 				pbar['errors']     = tqdm(desc='Errors      ', unit='', position=2)
+			
+			if self.out_file is None and self.show_pbar is False:
+				print('\t'.join(RDPSCAPSCAN_TSV_HDR))
 
 			out_buffer = []
 			final_iter = False
