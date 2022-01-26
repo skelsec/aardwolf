@@ -60,7 +60,7 @@ class RDPInterfaceThread(QObject):
 		# which makes everythign a mess.
 		# If you know better (that doesn't require a noname unmaintained lib install) lemme know!
 		try:
-			while True:
+			while not self.conn.disconnected_evt.is_set():
 				try:
 					data = self.in_q.get(False)
 				except queue.Empty:

@@ -938,7 +938,9 @@ class RDPConnection:
 							raise Exception('Signature mismatch')
 						fpdu.fpOutputUpdates = TS_FP_UPDATE.from_bytes(data)
 					await self.__fastpath_in_queue.put((fpdu, None))
-
+		
+		except asyncio.CancelledError:
+			return None, None
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
@@ -978,7 +980,9 @@ class RDPConnection:
 					traceback.print_exc()
 					return
 				
-				
+		except asyncio.CancelledError:
+			return None, None
+
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
@@ -1090,6 +1094,9 @@ class RDPConnection:
 						logger.debug('Got clipboard data but no clipboard channel setup!')
 						continue
 					await self.__joined_channels['cliprdr'].in_queue.put(indata)
+
+		except asyncio.CancelledError:
+			return None, None
 
 		except Exception as e:
 			traceback.print_exc()

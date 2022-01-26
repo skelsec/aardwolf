@@ -86,19 +86,18 @@ class RDPLoginScanner:
 					result = 'MAYBE'
 				ios = copy.deepcopy(self.iosettings)
 				ios.supported_protocols = proto
-				connection = self.rdp_mgr.create_connection_newtarget(target, ios)
-				_, err = await connection.connect()
-				if err is not None:
-					result = 'NO'
-				else:
-					await connection.terminate()
-				if result == 'NO' and i != (len(self.flags_test)-1):
-					# avoid printing NO multiple times
-					continue
+				async with self.rdp_mgr.create_connection_newtarget(target, ios) as connection:
+					_, err = await connection.connect()
+					if err is not None:
+						result = 'NO'
+					
+					if result == 'NO' and i != (len(self.flags_test)-1):
+						# avoid printing NO multiple times
+						continue
 
-				await self.res_q.put(EnumResult(tid, target, result, status = EnumResultStatus.RESULT))
-				if result == 'YES':
-					break
+					await self.res_q.put(EnumResult(tid, target, result, status = EnumResultStatus.RESULT))
+					if result == 'YES':
+						break
 
 		except asyncio.CancelledError:
 			return
