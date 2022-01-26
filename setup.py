@@ -60,16 +60,16 @@ setup(
 
 
 	install_requires=[
-		'minikerberos>=0.2.14',
+		'minikerberos>=0.2.15',
 		'winsspi>=0.0.9',
-		'asysocks',
+		'asysocks>=0.1.6',
 		'tqdm',
 		'colorama',
 		'asn1crypto',
 		'asn1tools',
 		'pycryptodomex', #optional, but recommended
 		'pyperclip>=1.8.2',
-		'arc4>=0.0.4',
+		'arc4>=0.0.4', #fater than cryptodome
 		'Pillow>=9.0.0',
 	] + install_requires,
 	

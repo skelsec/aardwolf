@@ -75,34 +75,32 @@ class RDPScreenGrabberScanner:
 			
 		connection = None
 		try:
-			connection = self.rdp_mgr.create_connection_newtarget(target, self.iosettings)
-			_, err = await connection.connect()
-			if err is not None:
-				raise err
-			
-			buffer = Image.new('RGBA', (self.iosettings.video_width, self.iosettings.video_height))
+			async with self.rdp_mgr.create_connection_newtarget(target, self.iosettings) as connection:
+				_, err = await connection.connect()
+				if err is not None:
+					raise err
+				
+				buffer = Image.new('RGBA', (self.iosettings.video_width, self.iosettings.video_height))
 
-			try:
-				await asyncio.wait_for(get_image(buffer, connection.ext_out_queue), self.screentime)
-			except:
-				pass
-			
-			if self.ext_result_q is None:
-				filename = 'screen_%s_%s.png' % (target, tid)
-				buffer.save(filename,'png')
-				await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.RESULT))
-			else:
-				await self.res_q.put(EnumResult(tid, target, buffer, status = EnumResultStatus.RESULT))
+				try:
+					await asyncio.wait_for(get_image(buffer, connection.ext_out_queue), self.screentime)
+				except:
+					pass
+				
+				if self.ext_result_q is None:
+					filename = 'screen_%s_%s.png' % (target, tid)
+					buffer.save(filename,'png')
+					await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.RESULT))
+				else:
+					await self.res_q.put(EnumResult(tid, target, buffer, status = EnumResultStatus.RESULT))
 
 		except asyncio.CancelledError:
 			return
 		except Exception as e:
-			traceback.print_exc()
+			#traceback.print_exc()
 			await self.res_q.put(EnumResult(tid, target, None, error = e, status = EnumResultStatus.ERROR))
 		finally:
 			await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.FINISHED))
-			if connection is not None:
-				await connection.terminate()
 			
 
 	async def worker(self):
