@@ -58,7 +58,9 @@ class EnumResultFinal:
 class RDPLoginScanner:
 	def __init__(self, rdp_url, iosettings:RDPIOSettings, worker_count = 10, out_file = None, out_format = 'str', show_pbar = True, task_q = None, ext_result_q = None):
 		self.target_gens = []
-		self.rdp_mgr = RDPConnectionURL(rdp_url)
+		self.rdp_mgr = rdp_url
+		if isinstance(rdp_url, RDPConnectionURL) is False:
+			self.rdp_mgr = RDPConnectionURL(rdp_url)
 		self.worker_count = worker_count
 		self.task_q = task_q
 		self.res_q = None
