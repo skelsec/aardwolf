@@ -268,6 +268,13 @@ class RDPConnection:
 			self.disconnected_evt.set()
 			return None, e
 	
+	def get_extra_info(self):
+		ntlm_data = self.authapi.get_extra_info()
+		if ntlm_data is not None:
+			return ntlm_data.to_dict()
+		return None
+		 
+	
 	async def credssp_auth(self):
 		try:
 			#constructing authentication API is not specified

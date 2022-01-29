@@ -39,7 +39,9 @@ class EnumResultFinal:
 class RDPScreenGrabberScanner:
 	def __init__(self, rdp_url, iosettings, worker_count = 10, out_dir = None, screentime = 5, show_pbar = True, task_q = None, res_q = None, ext_result_q = None):
 		self.target_gens = []
-		self.rdp_mgr = RDPConnectionURL(rdp_url)
+		self.rdp_mgr = rdp_url
+		if isinstance(rdp_url, RDPConnectionURL) is False:
+			self.rdp_mgr = RDPConnectionURL(rdp_url)
 		self.worker_count = worker_count
 		self.task_q = task_q
 		self.res_q = res_q
@@ -71,6 +73,7 @@ class RDPScreenGrabberScanner:
 				return None, None
 
 			except Exception as e:
+				print(e)
 				return None, e
 			
 		connection = None
@@ -84,7 +87,7 @@ class RDPScreenGrabberScanner:
 
 				try:
 					await asyncio.wait_for(get_image(buffer, connection.ext_out_queue), self.screentime)
-				except:
+				except Exception as e:
 					pass
 				
 				if self.ext_result_q is None:
