@@ -18,6 +18,9 @@ class CredSSPAuth:
 		self.__internal_auth_continue = True
 		self.seqno = 0
 
+	def get_extra_info(self):
+		return self.auth_ctx.get_extra_info()
+
 	async def authenticate(self, token, flags = None, pubkey = None, remote_credguard = False):
 		try:
 			# currently only SSPI supported

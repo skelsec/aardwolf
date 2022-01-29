@@ -4,6 +4,7 @@ import hmac
 import copy
 import hashlib
 
+from aardwolf.authentication.ntlm.structures.serverinfo import NTLMServerInfo
 from aardwolf.authentication.ntlm.templates.server import NTLMServerTemplates
 from aardwolf.authentication.ntlm.templates.client import NTLMClientTemplates
 from aardwolf.authentication.ntlm.structures.negotiate_flags import NegotiateFlags
@@ -15,7 +16,7 @@ from aardwolf.authentication.ntlm.messages.challenge import NTLMChallenge
 from aardwolf.authentication.ntlm.messages.authenticate import NTLMAuthenticate
 from aardwolf.authentication.ntlm.creds_calc import *
 from aardwolf.crypto.symmetric import RC4
-		
+
 
 class NTLMHandlerSettings:
 	def __init__(self, credential, mode = 'CLIENT', template_name = 'Windows10_15063', custom_template = None):
@@ -153,9 +154,9 @@ class NTLMAUTHHandler:
 	def is_extended_security(self):
 		return NegotiateFlags.NEGOTIATE_EXTENDED_SESSIONSECURITY in self.ntlmChallenge.NegotiateFlags
 	
-	#def get_extra_info(self):
-	#	self.extra_info = NTLMServerInfo.from_challenge(self.ntlmChallenge)
-	#	return self.extra_info
+	def get_extra_info(self):
+		self.extra_info = NTLMServerInfo.from_challenge(self.ntlmChallenge)
+		return self.extra_info
 		
 	def MAC(self, handle, signingKey, seqNum, message):
 		if self.is_extended_security() == True:

@@ -77,6 +77,8 @@ class AuthenticatorBuilder:
 					raise Exception('NTLM authentication requres password!')
 				
 			if creds.secret_type == RDPCredentialsSecretType.NT:
+				if isinstance(creds.secret, str) is True and len(creds.secret) != 32:
+					raise Exception('This is not an NT hash!')
 				ntlmcred.nt_hash = creds.secret
 			elif creds.secret_type == RDPCredentialsSecretType.PASSWORD:
 				ntlmcred.password = creds.secret
