@@ -60,9 +60,9 @@ setup(
 
 
 	install_requires=[
-		'minikerberos>=0.2.15',
+		'minikerberos>=0.2.17',
 		'winsspi>=0.0.9',
-		'asysocks>=0.1.6',
+		'asysocks>=0.1.7',
 		'tqdm',
 		'colorama',
 		'asn1crypto',
