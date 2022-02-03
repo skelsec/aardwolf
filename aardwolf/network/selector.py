@@ -20,11 +20,6 @@ class NetworkSelector:
 			elif target.proxy.type in [RDPProxyType.WSNET,RDPProxyType.WSNETWS, RDPProxyType.WSNETWSS, RDPProxyType.SOCKS5, RDPProxyType.SOCKS5_SSL, RDPProxyType.SOCKS4, RDPProxyType.SOCKS4_SSL]:
 				return SocksProxyConnection(target = target), None
 
-			#elif target.proxy.type in [RDPProxyType.MULTIPLEXOR, RDPProxyType.MULTIPLEXOR_SSL]:
-			#	mpc = MultiplexorProxyConnection(target)
-			#	socks_proxy, err = await mpc.connect()
-			#	return socks_proxy, err
-
 			else:
 				return None, Exception('Cant select correct connection type!')
 		except Exception as e:

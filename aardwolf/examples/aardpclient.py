@@ -5,6 +5,7 @@ import asyncio
 import traceback
 import queue
 import threading
+import concurrent.futures
 
 from aardwolf import logger
 from aardwolf.commons.url import RDPConnectionURL
@@ -54,21 +55,26 @@ class RDPInterfaceThread(QObject):
 		self.settings = settings
 		self.in_q = in_q
 
-	async def inputhandler(self):
-		# This is super-ugly but I could not find a better solution
-		# Problem is that pyqt5 is not async, and QT internally is using its own event loop
-		# which makes everythign a mess.
-		# If you know better (that doesn't require a noname unmaintained lib install) lemme know!
-		try:
-			while not self.conn.disconnected_evt.is_set():
-				try:
-					data = self.in_q.get(False)
-				except queue.Empty:
-					await asyncio.sleep(0.01)
-					continue
-				await self.conn.ext_in_queue.put(data)
-		except:
-			traceback.print_exc()
+	def inputhandler(self, loop:asyncio.AbstractEventLoop):
+		while not self.conn.disconnected_evt.is_set():
+			data = self.in_q.get()
+			loop.call_soon_threadsafe(self.conn.ext_in_queue.put_nowait, data)
+
+	#async def inputhandler(self):
+	#	# This is super-ugly but I could not find a better solution
+	#	# Problem is that pyqt5 is not async, and QT internally is using its own event loop
+	#	# which makes everythign a mess.
+	#	# If you know better (that doesn't require a noname unmaintained lib install) lemme know!
+	#	try:
+	#		while not self.conn.disconnected_evt.is_set():
+	#			try:
+	#				data = self.in_q.get(False)
+	#			except queue.Empty:
+	#				await asyncio.sleep(0.01)
+	#				continue
+	#			await self.conn.ext_in_queue.put(data)
+	#	except:
+	#		traceback.print_exc()
 	
 	async def rdpconnection(self):
 		try:
@@ -78,7 +84,8 @@ class RDPInterfaceThread(QObject):
 			if err is not None:
 				raise err
 
-			asyncio.create_task(self.inputhandler())
+			#asyncio.create_task(self.inputhandler())
+			asyncio.get_event_loop().run_in_executor(None, self.inputhandler, asyncio.get_event_loop())
 			self.loop_started_evt.set()
 			while True:
 				data = await self.conn.ext_out_queue.get()

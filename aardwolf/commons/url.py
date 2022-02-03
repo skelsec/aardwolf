@@ -5,6 +5,7 @@ from aardwolf.commons.proxy import RDPProxy
 from aardwolf.commons.target import RDPTarget, RDPConnectionDialect, RDPConnectionProtocol
 from aardwolf.commons.authbuilder import AuthenticatorBuilder
 from aardwolf.connection import RDPConnection
+from aardwolf.vncconnection import VNCConnection
 from getpass import getpass
 import base64
 import ipaddress
@@ -49,8 +50,15 @@ class RDPConnectionURL:
 	def get_connection(self, iosettings):
 		tio = copy.deepcopy(iosettings)
 		credential = self.get_credential()
-		target = self.get_target()		
-		return RDPConnection(target, credential, tio)
+		target = self.get_target()
+		if target.dialect is not None:
+			if target.dialect == RDPConnectionDialect.RDP:
+				return RDPConnection(target, credential, tio)
+			elif target.dialect == RDPConnectionDialect.VNC:
+				return VNCConnection(target, credential, tio)
+			else:
+				raise Exception('Unknown dialect %s' % target.dialect)
+		raise Exception('Either target or dialect must be defined first!')
 
 	def create_connection_newtarget(self, ip_or_hostname, iosettings):
 		tio = copy.deepcopy(iosettings)
@@ -99,6 +107,7 @@ class RDPConnectionURL:
 			domain = self.domain, 
 			proxy = self.get_proxy(),
 			protocol=self.protocol,
+			dialect=self.dialect
 		)
 		return t
 
@@ -117,7 +126,7 @@ class RDPConnectionURL:
 	
 
 	def scheme_decoder(self, scheme):
-		#print('SCHEME: %s' % scheme)
+		print('SCHEME: %s' % scheme)
 		schemes = scheme.upper().split('+')
 		
 		connection_tags = schemes[0].split('-')

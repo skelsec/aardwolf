@@ -963,6 +963,16 @@ convert_rgb24_rgb32(uint8 *decomp_buff, int decomp_buff_size, uint8 *dst, int ds
 	}
 }
 
+static void
+convert_rgbx_rgba(uint8 *decomp_buff, int decomp_buff_size, uint8 *dst, int dst_size){
+	for(int i =0; i< decomp_buff_size; i=i+4){
+		dst[i] = decomp_buff[i];
+		dst[i+1] = decomp_buff[i+1];
+		dst[i+2] = decomp_buff[i+2];
+		dst[i+3] = 0xff;
+	}
+}
+
 /* *INDENT-ON* */
 
 static PyObject*
@@ -1019,9 +1029,25 @@ bitmap_decompress_wrapper(PyObject* self, PyObject* args)
 	Py_RETURN_NONE;
 }
 
+static PyObject*
+mask_rgbx_wrapper(PyObject* self, PyObject* args)
+{
+	Py_buffer output, input;
+
+	if (!PyArg_ParseTuple(args, "s*s*", &output, &input)){
+		PyErr_SetString(PyExc_TypeError, "Input parameter error");
+		return (PyObject *) NULL;
+	}
+
+	convert_rgbx_rgba((uint8*)input.buf, input.len, (uint8*)output.buf, output.len);
+	
+	Py_RETURN_NONE;
+}
+
 static PyMethodDef rle_methods[] =
 {
      {"bitmap_decompress", bitmap_decompress_wrapper, METH_VARARGS, "decompress bitmap from microsoft rle algorithm."},
+	 {"mask_rgbx", mask_rgbx_wrapper, METH_VARARGS, "Converts RGBX to RGBA"},
      {NULL, NULL, 0, NULL}
 };
 

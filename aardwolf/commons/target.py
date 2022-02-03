@@ -13,6 +13,7 @@ import copy
 
 class RDPConnectionDialect(enum.Enum):
 	RDP = 'RDP'
+	VNC = 'VNC'
 
 class RDPConnectionProtocol(enum.Enum):
 	TCP = 'TCP'
@@ -21,7 +22,7 @@ class RDPTarget:
 	"""
 	"""
 	def __init__(self, ip = None, port = 3389, hostname = None, timeout = 1, dc_ip=None, 
-						domain = None, proxy = None, protocol = RDPConnectionProtocol.TCP, serverip = None):
+						domain = None, proxy = None, protocol = RDPConnectionProtocol.TCP, serverip = None, dialect = RDPConnectionDialect.RDP):
 		self.ip = ip
 		self.port = port
 		self.hostname = hostname
@@ -31,6 +32,9 @@ class RDPTarget:
 		self.proxy = proxy
 		self.protocol = protocol
 		self.serverip = serverip
+		self.dialect = dialect
+		if self.dialect == RDPConnectionDialect.VNC:
+			self.port = 5900
 
 	def to_target_string(self):
 		return 'termsrv/%s@%s' % (self.hostname, self.domain)
@@ -46,12 +50,16 @@ class RDPTarget:
 			proxy = copy.deepcopy(self.proxy),
 			protocol = self.protocol,
 			serverip = self.serverip,
+			dialect = self.dialect
 		)
 		return t
 	
 	@staticmethod
-	def from_connection_string(s):
+	def from_connection_string(s, is_rdp = True):
 		port = 3389
+		if is_rdp is False:
+			port = 5900
+		
 		dc = None
 		
 		_, target = s.rsplit('@', 1)
