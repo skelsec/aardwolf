@@ -23,6 +23,16 @@ class TCPSocket:
 
 		self.incoming_task = None
 		self.outgoing_task = None
+		self.disconnect_monitor_task = None
+
+
+	async def disconnect_monitor(self):
+		await self.disconnected.wait()
+		if self.incoming_task is not None:
+			self.incoming_task.cancel()
+		await self.disconnect()
+		
+
 		
 	async def disconnect(self):
 		"""
@@ -51,7 +61,7 @@ class TCPSocket:
 		"""
 		try:
 			lasterror = None
-			while not self.disconnected.is_set():	
+			while not self.disconnected.is_set():
 				try:
 					await asyncio.sleep(0)
 					data = await self.reader.read(1073741824)
@@ -89,7 +99,7 @@ class TCPSocket:
 			while not self.disconnected.is_set():
 				data = await self.out_queue.get()
 				if data == b'':
-					await self.disconnect()
+					return
 				#print('TCP -> %s' % data.hex())
 				self.writer.write(data)
 				await self.writer.drain()
@@ -130,6 +140,7 @@ class TCPSocket:
 			
 			self.incoming_task = asyncio.create_task(self.handle_incoming())
 			self.outgoing_task = asyncio.create_task(self.handle_outgoing())
+			self.disconnect_monitor_task = asyncio.create_task(self.disconnect_monitor())
 
 
 			return True, None

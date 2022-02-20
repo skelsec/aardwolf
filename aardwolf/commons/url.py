@@ -38,6 +38,7 @@ class RDPConnectionURL:
 		self.fragment = None
 		self.path = None
 		self.compression = False
+		self.scheme = None
 
 		self.target = target
 
@@ -75,8 +76,12 @@ class RDPConnectionURL:
 			target.ip = ip_or_hostname
 
 		#spneg = AuthenticatorBuilder.to_credssp(credential, target)
-		
-		return RDPConnection(target, credential, tio)
+		if target.dialect == RDPConnectionDialect.RDP:
+			return RDPConnection(target, credential, tio)
+		elif target.dialect == RDPConnectionDialect.VNC:
+			return VNCConnection(target, credential, tio)
+		else:
+			raise Exception('Unknown dialect %s' % target.dialect)
 
 	def get_file(self):
 		return RDPFile.from_RDPurl(self)
@@ -126,10 +131,9 @@ class RDPConnectionURL:
 	
 
 	def scheme_decoder(self, scheme):
-		print('SCHEME: %s' % scheme)
-		schemes = scheme.upper().split('+')
+		self.schemes = scheme.upper().split('+')
 		
-		connection_tags = schemes[0].split('-')
+		connection_tags = self.schemes[0].split('-')
 		if len(connection_tags) > 1:
 			self.dialect = RDPConnectionDialect(connection_tags[0])
 			self.protocol = RDPConnectionProtocol(connection_tags[1])
@@ -137,18 +141,18 @@ class RDPConnectionURL:
 			self.dialect = RDPConnectionDialect(connection_tags[0])
 			self.protocol = RDPConnectionProtocol.TCP
 
-		if len(schemes) == 1:
+		if len(self.schemes) == 1:
 			# user did not specify a requested auth scheme, defaulting to plain
 			# later on when server requires credssp this will be converted to NTLM
 			self.authentication_protocol = RDPAuthProtocol.PLAIN
 			self.secret_type = RDPCredentialsSecretType.PASSWORD
 			return
 
-		auth_tags = schemes[1].replace('-','_')
+		auth_tags = self.schemes[1].replace('-','_')
 		try:
 			self.authentication_protocol = RDPAuthProtocol(auth_tags)
 		except:
-			auth_tags = schemes[1].split('-')
+			auth_tags = self.schemes[1].split('-')
 			#print(auth_tags)
 			if len(auth_tags) > 1:
 				if auth_tags[0] == 'MULTIPLEXOR':
@@ -253,10 +257,12 @@ class RDPConnectionURL:
 		self.ip = url_e.hostname
 		if url_e.port:
 			self.port = url_e.port
-		elif self.protocol == RDPConnectionProtocol.TCP:
+		elif self.protocol == RDPConnectionProtocol.TCP and self.dialect == RDPConnectionDialect.RDP:
 			self.port = 3389
-		elif self.protocol == RDPConnectionProtocol.QUIC:
-			self.port = 443
+		elif self.protocol == RDPConnectionProtocol.TCP and self.dialect == RDPConnectionDialect.VNC:
+			self.port = 5800
+		#elif self.protocol == RDPConnectionProtocol.QUIC:
+		#	self.port = 443
 		else:
 			raise Exception('Port must be provided!')
 

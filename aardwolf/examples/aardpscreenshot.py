@@ -10,6 +10,7 @@ from aardwolf.examples.scancommons.targetgens import *
 from aardwolf.examples.scancommons.internal import *
 from aardwolf.examples.scancommons.utils import *
 from aardwolf.commons.queuedata import RDPDATATYPE
+from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from PIL import Image
 from tqdm import tqdm
 
@@ -301,7 +302,8 @@ async def amain():
 
 	iosettings = RDPIOSettings()
 	iosettings.channels = []
-	iosettings.video_out_format = 'pil'
+	iosettings.video_out_format = VIDEO_FORMAT.PIL
+	iosettings.clipboard_use_pyperclip = False
 
 	enumerator = RDPScreenGrabberScanner(
 		rdp_url,

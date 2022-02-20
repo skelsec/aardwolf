@@ -12,6 +12,7 @@ from aardwolf.examples.scancommons.targetgens import *
 from aardwolf.examples.scancommons.internal import *
 from aardwolf.examples.scancommons.utils import *
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS
+from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from tqdm import tqdm
 
 class EnumResultFinal:
@@ -329,7 +330,8 @@ async def amain():
 
 	iosettings = RDPIOSettings()
 	iosettings.channels = []
-	iosettings.video_out_format = 'raw'
+	iosettings.video_out_format = VIDEO_FORMAT.RAW
+	iosettings.clipboard_use_pyperclip = False
 
 	enumerator = RDPLoginScanner(
 		rdp_url,

@@ -2,6 +2,7 @@ import enum
 from aardwolf.protocol.fastpath.bitmap import TS_BITMAP_FLAG, TS_BITMAP_DATA
 
 from aardwolf.commons.queuedata import RDPDATATYPE
+from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from aardwolf.utils.rectconvert import rectconvert
 
 class RDP_VIDEO:
@@ -16,7 +17,7 @@ class RDP_VIDEO:
 		self.data:bytes = None
 	
 	@staticmethod
-	def from_bitmapdata(bitmapdata:TS_BITMAP_DATA, data_format = 'qt'): #TS_BITMAP_DATA
+	def from_bitmapdata(bitmapdata:TS_BITMAP_DATA, data_format = VIDEO_FORMAT.QT5):
 		res = RDP_VIDEO()
 		res.type = RDPDATATYPE.VIDEO
 		res.x = bitmapdata.destLeft

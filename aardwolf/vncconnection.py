@@ -1,8 +1,13 @@
 
-import asyncio
-import os
+#
+#
+# TODO: Better keyboard handling
+# TODO: Add more rectangle decoding options
+# TODO: Add more security handshake options (all of the RFC is already implemented, so only custom are to be added)
+# TODO: Add mouse scroll functionality (QT5 client needs to be modified for that)
+
 import io
-from sys import byteorder
+import asyncio
 import traceback
 from struct import pack, unpack
 from typing import cast
@@ -14,8 +19,13 @@ from aardwolf.crypto.symmetric import DES
 from aardwolf.crypto.BASE import cipherMODE
 
 from aardwolf.commons.queuedata import *
+from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT
+from aardwolf.protocol.vnc.keyboard import *
+from aardwolf.keyboard import VK_MODIFIERS
+from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
+from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 
-from PIL import Image, ImageDraw
+from PIL import Image
 from PIL.ImageQt import ImageQt
 import rle
 
@@ -45,6 +55,10 @@ class VNCConnection:
 		self.disconnected_evt = asyncio.Event() #this will be set if we disconnect for whatever reason
 		self.server_supp_security_types = []
 		self.__selected_security_type = 2
+		self.__refresh_screen_task = None
+		self.__reader_loop_task = None
+		self.__external_reader_task = None
+		self.__use_pyperclip = False
 
 		# these are the main queues with which you can communicate with the server
 		# ext_out_queue: yields video data
@@ -70,11 +84,93 @@ class VNCConnection:
 		self.width = None
 		self.height = None
 		self.__desktop_buffer = None
-		self.__frame_update_req_evt = asyncio.Event()
 
+		self.__vk_to_vnckey = {
+			'VK_BACK' : KEY_BackSpace,
+			'VK_ESCAPE' : KEY_Escape,
+			'VK_TAB' : KEY_Tab,
+			'VK_RETURN' : KEY_Return,
+			'VK_INSERT' : KEY_Insert,
+			'VK_DELETE' : KEY_Delete,
+			'VK_HOME' : KEY_Home,
+			'VK_END' : KEY_End,
+			'VK_PRIOR' : KEY_PageUp,
+			'VK_NEXT' : KEY_PageDown,
+			'VK_LEFT' : KEY_Left,
+			'VK_UP' : KEY_Up,
+			'VK_RIGHT' : KEY_Right,
+			'VK_DOWN' : KEY_Down,
+			'VK_HOME' : KEY_Home,
+			'VK_F1' : KEY_F1,
+			'VK_F2' : KEY_F2,
+			'VK_F3' : KEY_F3,
+			'VK_F4' : KEY_F4,
+			'VK_F5' : KEY_F5,
+			'VK_F6' : KEY_F6,
+			'VK_F7' : KEY_F7,
+			'VK_F8' : KEY_F8,
+			'VK_F9' : KEY_F9,
+			'VK_F10' : KEY_F10,
+			'VK_F11' : KEY_F11,
+			'VK_F12' : KEY_F12,
+			#'VK_F13' : KEY_F13,
+			#'VK_F14' : KEY_F14,
+			#'VK_F15' : KEY_F15,
+			#'VK_F16' : KEY_F16,
+			#'VK_F17' : KEY_F17,
+			#'VK_F18' : KEY_F18,
+			#'VK_F19' : KEY_F19,
+			#'VK_F20' : KEY_F20,
+			'VK_LSHIFT' : KEY_ShiftLeft,
+			'VK_RSHIFT' : KEY_ShiftRight,
+			'VK_LCONTROL' : KEY_ControlLeft,
+			'VK_RCONTROL' : KEY_ControlRight,
+			'VK_LWIN' : KEY_Super_L,
+			'VK_RWIN' : KEY_Super_R,
+			'VK_LMENU' : KEY_AltLeft,
+			'VK_RMENU' : KEY_AltRight,
+			'VK_SCROLL' : KEY_Scroll_Lock,
+			#'????' : KEY_Sys_Req,
+			'VK_NUMLOCK' : KEY_Num_Lock,
+			'VK_CAPITAL' : KEY_Caps_Lock,
+			'VK_PAUSE' : KEY_Pause,
+			#'????' : KEY_Super_L,
+			#'????' : KEY_Super_R,
+			#'????' : KEY_Hyper_L,
+			#'????' : KEY_Hyper_R,
+			#'????' : KEY_KP_0,
+			#'????' : KEY_KP_1,
+			#'????' : KEY_KP_2,
+			#'????' : KEY_KP_3,
+			#'????' : KEY_KP_4,
+			#'????' : KEY_KP_5,
+			#'????' : KEY_KP_6,
+			#'????' : KEY_KP_7,
+			#'????' : KEY_KP_8,
+			#'????' : KEY_KP_9,
+			#'????': KEY_KP_Enter,
+			'VK_MULTIPLY': KEY_KP_Multiply,
+			'VK_ADD': KEY_KP_Add,
+			'VK_SUBTRACT': KEY_KP_Subtract,
+			'VK_DECIMAL' : KEY_KP_Decimal,
+			'VK_DIVIDE' : KEY_KP_Divide,
+			'VK_SNAPSHOT' : KEY_Print,
+			'VK_DBE_NOCODEINPUT' : KEY_KP_Divide,
+		}
+		
+		self.__keyboard_layout = KeyboardLayoutManager().get_layout_by_shortname(self.iosettings.client_keyboard)
 	
 	async def terminate(self):
-		try:			
+		try:
+			if self.__writer is not None:
+				self.__writer.close()
+			if self.__refresh_screen_task is not None:
+				self.__refresh_screen_task.cancel()
+			if self.__reader_loop_task is not None:
+				self.__reader_loop_task.cancel()
+			if self.__external_reader_task is not None:
+				self.__external_reader_task.cancel()
+			
 			return True, None
 		except Exception as e:
 			traceback.print_exc()
@@ -118,6 +214,11 @@ class VNCConnection:
 			if err is not None:
 				raise err
 			logger.debug('Security handshake OK')
+
+			logger.debug('Setting up clipboard')
+			_, err = await self.__setup_clipboard()
+			if err is not None:
+				raise err
 			
 			logger.debug('Client init')
 			_, err = await self.__client_init()
@@ -130,8 +231,21 @@ class VNCConnection:
 			
 			return True, None
 		except Exception as e:
-			self.disconnected_evt.set()
+			await self.terminate()
 			return None, e
+
+	async def __setup_clipboard(self):
+		if self.iosettings.clipboard_use_pyperclip is True:
+			try:
+				import pyperclip
+			except ImportError:
+				logger.info('Could not import pyperclip! Copy-paste will not work!')
+				self.__use_pyperclip = False
+			else:
+				self.__use_pyperclip = True
+				if not pyperclip.is_available():
+					logger.info("pyperclip - Copy functionality available!")
+		return True, None
 	
 	async def __banner_exchange(self):
 		try:
@@ -141,8 +255,6 @@ class VNCConnection:
 			version_reply = b'RFB %s\n' % self.client_version.encode()
 			logger.debug('Version reply: %s' % version_reply)
 			self.__writer.write(version_reply)
-
-			print(self.server_version)
 			return True, None
 		except Exception as e:
 			return None, e
@@ -167,8 +279,13 @@ class VNCConnection:
 				self.__writer.write(bytes([self.__selected_security_type]))
 				challenge = await self.__reader.readexactly(16)
 
-				password = self.credentials.secret.ljust(8, '\x00').encode('ascii')
-				print(password)
+				# no username used here, but we support RDP as well
+				password = self.credentials.secret
+				if self.credentials.secret is None:
+					password = self.credentials.username
+				
+				password = password.ljust(8, '\x00').encode('ascii')
+				password = password[:8]
 				# converting password to key
 				newkey = b''
 				for ki in range(len(password)):
@@ -180,7 +297,6 @@ class VNCConnection:
 					newkey+= bytes([btgt])
 				ctx = DES(newkey, mode = cipherMODE.ECB, IV = None)
 				response = ctx.encrypt(challenge)
-				print(response)
 				self.__writer.write(response)
 
 			else:
@@ -189,15 +305,13 @@ class VNCConnection:
 			auth_result = await self.__reader.readexactly(4)
 			auth_result = int.from_bytes(auth_result, byteorder = 'big', signed=False)
 			if auth_result != 0:
-				logger.debug('Auth Failed!')
+				logger.debug('Auth Failed! Auth result: %s' % auth_result)
 				err_string_size = await self.__reader.readexactly(4)
 				err_string_size = int.from_bytes(err_string_size, byteorder = 'big', signed=False)
 				err_string = await self.__reader.readexactly(err_string_size)
 				err_string = err_string.decode()
 				raise Exception(err_string)
 			logger.debug('Auth OK!')
-
-			print(self.server_supp_security_types)
 			return True, None
 		except Exception as e:
 			return None, e
@@ -224,36 +338,99 @@ class VNCConnection:
 
 
 			self.__desktop_buffer = Image.new(mode="RGBA", size=(self.width, self.height))
-			_, err = await self.set_encodings()
+			_, err = await self.set_encodings(self.iosettings.vnc_encodings)
 			if err is not None:
 				raise err
-
+			
+			# don't change this!!!!
 			await self.set_pixel_format()
 			await self.framebuffer_update_request()
-			await self.framebuffer_update_request(incremental = 1)
 			
-			asyncio.create_task(self.testloop())
+			self.__refresh_screen_task = asyncio.create_task(self.__refresh_screen_loop())
 			return True, None
 		except Exception as e:
 			return None, e
 
 	async def __external_reader(self):
-		# This coroutine handles keyboard/mouse etc input from the user
+		# This coroutine handles keyboard/mouse/clipboard etc input from the user
 		# It wraps the data in it's appropriate format then dispatches it to the server
 		try:
-			while True:
+			while not self.disconnected_evt.is_set():
 				indata = await self.ext_in_queue.get()
 				if indata is None:
-					#signaling exit
+					logger.debug('External queue got None, upper layer is exiting!')
 					await self.terminate()
 					return
 				if indata.type == RDPDATATYPE.KEYSCAN:
 					indata = cast(RDP_KEYBOARD_SCANCODE, indata)
-					#await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+					modifiers = VK_MODIFIERS(0)
+					for mod in indata.modifiers:
+						if mod == 'KEYPAD':
+							modifiers |= VK_MODIFIERS.VK_NUMLOCK
+						elif mod == 'SHIFT':
+							modifiers |= VK_MODIFIERS.VK_SHIFT
+						elif mod == 'CONTROL':
+							modifiers |= VK_MODIFIERS.VK_CONTROL
+						elif mod == 'ALT':
+							modifiers |= VK_MODIFIERS.VK_MENU
+
+					## emulating keys...
+					keycode = None
+					try:
+						if indata.keyCode is None and indata.vk_code is None:
+							print('No keycode found! ')
+							continue
+
+						if indata.vk_code is not None:
+							vk_code = indata.vk_code
+						else:
+							vk_code = self.__keyboard_layout.scancode_to_vk(indata.keyCode)
+						print('Got VK: %s' % vk_code)
+						if vk_code is None:
+							print('Could not map SC to VK! SC: %s' % indata.keyCode)
+						if vk_code is not None and vk_code in self.__vk_to_vnckey:
+							keycode = self.__vk_to_vnckey[vk_code]
+							print('AAAAAAAA %s' % hex(keycode))
+
+						if keycode is None:
+							keycode = self.__keyboard_layout.scancode_to_char(indata.keyCode, modifiers)
+							print(keycode)
+							if keycode is None:
+								print('Failed to resolv key! SC: %s VK: %s' % (indata.keyCode, vk_code))
+								continue
+							elif keycode is not None and len(keycode) == 1:
+								keycode = ord(keycode)
+								print('Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
+							elif keycode is not None and len(keycode) > 1:
+								print('LARGE! Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
+								continue
+							else:
+								print('This key is too special! Can\'t resolve it! SC: %s VK: %s' % (indata.keyCode, vk_code))
+								continue
+						
+					except Exception as e:
+						traceback.print_exc()
+						continue
+					
+					if indata.keyCode is not None:
+						print('Original kk  : %s [%s]' % (indata.keyCode, hex(indata.keyCode)))
+					print('Final keycode: %s' % hex(keycode))
+					print('Is pressed   : %s' % indata.is_pressed)
+					if keycode is not None:
+						msg = pack("!BBxxI", 4, int(indata.is_pressed), keycode)
+						self.__writer.write(msg)
 				
-				if indata.type == RDPDATATYPE.KEYUNICODE:
+				elif indata.type == RDPDATATYPE.KEYUNICODE:
 					indata = cast(RDP_KEYBOARD_UNICODE, indata)
-					#await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+					keycode = indata.char
+					if not isinstance(keycode, int):
+						if len(keycode) == 1:
+							keycode = ord(keycode)
+						else:
+							# I hope you know what you're doing here...
+							keycode = int.from_bytes(bytes.fromhex(keycode), byteorder = 'big', signed = False)
+					msg = pack("!BBxxI", 4, int(indata.is_pressed), indata.char)
+					self.__writer.write(msg)
 			
 				elif indata.type == RDPDATATYPE.MOUSE:
 					#PointerEvent
@@ -261,64 +438,82 @@ class VNCConnection:
 					if indata.xPos < 0 or indata.yPos < 0:
 						continue
 					
+					button =0
+					if indata.button == MOUSEBUTTON.MOUSEBUTTON_LEFT:
+						button = 1
+					elif indata.button == MOUSEBUTTON.MOUSEBUTTON_MIDDLE:
+						button = 2
+					elif indata.button == MOUSEBUTTON.MOUSEBUTTON_RIGHT:
+						button = 3
+					
+					buttonmask = 0
+					if indata.is_pressed is True:
+						if button == 1: buttonmask &= ~1
+						if button == 2: buttonmask &= ~2
+						if button == 3: buttonmask &= ~4
+						if button == 4: buttonmask &= ~8
+						if button == 5: buttonmask &= ~16
+					else:
+						if button == 1: buttonmask |= 1
+						if button == 2: buttonmask |= 2
+						if button == 3: buttonmask |= 4
+						if button == 4: buttonmask |= 8
+						if button == 5: buttonmask |= 16
+
+					
 					#print('sending mouse!')
-					msg = pack("!BBHH", 5, int(indata.pressed), indata.xPos, indata.yPos)
+					msg = pack("!BBHH", 5, buttonmask, indata.xPos, indata.yPos)
 					self.__writer.write(msg)
 
 				elif indata.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
-					indata = cast(RDP_CLIPBOARD_DATA_TXT, indata)
-					txtdata = indata.data.encode('ascii')
-					msg = pack("!BxxxIs", 6, len(txtdata), txtdata)
-					self.__writer.write(msg)
+					try:
+						indata = cast(RDP_CLIPBOARD_DATA_TXT, indata)
+						txtdata = indata.data.encode('latin-1')
+						msg = pack("!BxxxI", 6, len(txtdata))
+						msg += txtdata
+						self.__writer.write(msg)
+					except Exception as e:
+						traceback.print_exc()
+						continue
 
 		except asyncio.CancelledError:
 			return None, None
 
 		except Exception as e:
 			traceback.print_exc()
+			await self.terminate()
 			return None, e
 
-	async def testloop(self):
-		ctr = 0
-		while True:
-			await self.__frame_update_req_evt.wait()
-			if ctr == 100:
-				ctr = 0
-				await self.framebuffer_update_request(1)
-			else:
+	async def __refresh_screen_loop(self):
+		# Periodically sends a framebufferupdate request to the server
+		# Potentially not the best way to do it
+
+		while not self.disconnected_evt.is_set():
+			try:
 				await self.framebuffer_update_request(incremental=1)
-			#await self.framebuffer_update_request(incremental=1)
-			#await self.framebuffer_update_request(incremental=1)
-			self.__frame_update_req_evt.clear()
-			ctr += 1
-			#x = RDP_MOUSE()
-			#x.yPos = 1
-			#x.xPos = 1
-			#x.pressed = False
-			#await self.ext_in_queue.put(x)
+				await asyncio.sleep(1/self.iosettings.vnc_fps)
+			except asyncio.CancelledError:
+				return
+			except Exception as e:
+				break
 
 	async def __send_rect(self, x, y, width, height, image:Image):
 		try:
-			#image.save('./test/test_%s.png' % os.urandom(4).hex(), 'PNG')
 			#updating desktop buffer to have a way to copy rectangles later
 			if self.width == width and self.height == height:
 				self.__desktop_buffer = image
-				self.__desktop_buffer.save('test.png', 'PNG')
 			else:
 				self.__desktop_buffer.paste(image, [x, y, x+width, y+height])
 			
-			#if self.iosettings.video_out_format == 'pil' or self.iosettings.video_out_format == 'pillow':
-			#	return image
-			
-			if self.iosettings.video_out_format == 'raw':
+			if self.iosettings.video_out_format == VIDEO_FORMAT.RAW:
 				image = image.tobytes()
 
-			elif self.iosettings.video_out_format == 'qt':
+			elif self.iosettings.video_out_format == VIDEO_FORMAT.QT5:
 				image = ImageQt(image)
 			
-			elif self.iosettings.video_out_format == 'png':
+			elif self.iosettings.video_out_format == VIDEO_FORMAT.PNG:
 				img_byte_arr = io.BytesIO()
-				image.save(img_byte_arr, format=self.iosettings.video_out_format.upper())
+				image.save(img_byte_arr, format='PNG')
 				image = img_byte_arr.getvalue()
 			else:
 				raise ValueError('Output format of "%s" is not supported!' % self.iosettings.video_out_format)
@@ -335,7 +530,7 @@ class VNCConnection:
 
 
 		except Exception as e:
-			traceback.print_exc()
+			await self.terminate()
 			return None, e
 
 		
@@ -345,50 +540,29 @@ class VNCConnection:
 			while True:
 				msgtype = await self.__reader.readexactly(1)
 				msgtype = ord(msgtype)
-				print(msgtype)
 				if msgtype == 0:
-					# framebufferupdate
+					# Framebufferupdate message from the server
+					# 
 					num_rect = await self.__reader.readexactly(3)
 					num_rect = int.from_bytes(num_rect[1:], byteorder = 'big', signed = False)
-					print(num_rect)
 					for _ in range(num_rect):
 						rect_hdr = await self.__reader.readexactly(12)
 						(x, y, width, height, encoding) = unpack("!HHHHI", rect_hdr)
-						
-
 						if encoding == RAW_ENCODING:
-							#print(width*height*self.bypp)
 							try:
-								#print(self.bypp)
-								#print('x %s' % x)
-								#print('y %s' % y)
-								#print('width %s' % width)
-								#print('height %s' % height)
 								data = await self.__reader.readexactly(width*height*self.bypp)
 								image = bytes(width * height * self.bypp)
 								rle.mask_rgbx(image, data)
-								#print(image[:4])
-								#print(len(image))
-								#print(width*height*self.bypp)
 								image = Image.frombytes('RGBA', [width, height], image)
 								await self.__send_rect(x,y,width, height, image)
 							except Exception as e:
 								traceback.print_exc()
-								continue
+								return
 
 						elif encoding == COPY_RECTANGLE_ENCODING:
 							try:
 								data = await self.__reader.readexactly(4)
-								(srcx, srcy) = unpack("!HH", data)
-
-								#print('copy')
-								#print('width %s' % width)
-								#print('height %s' % height)
-								#print('x %s' % x)
-								#print('y %s' % y)
-								#print('srcx %s' % srcx)
-								#print('srcy %s' % srcy)
-								
+								(srcx, srcy) = unpack("!HH", data)								
 								newrect = self.__desktop_buffer.crop([srcx, srcy, srcx+width, srcy+height])
 								await self.__send_rect(x,y,width,height, newrect)
 								continue
@@ -399,57 +573,57 @@ class VNCConnection:
 
 						elif encoding == RRE_ENCODING:
 							try:
-								print('RRE!')
+								raw_data = b''
 								sub_rect_num = await self.__reader.readexactly(4)
+								raw_data += sub_rect_num
 								sub_rect_num = int.from_bytes(sub_rect_num, byteorder = 'big', signed = False)
-								#print(sub_rect_num)
 								backgroud_pixel = await self.__reader.readexactly(self.bypp)
-								r,g,b,a = unpack("BBBB", backgroud_pixel)
-								a = 255
-								rect = Image.new('RGBA', [width, height])
-								rect.paste((r,g,b,a), [0,0, width, height])
+								raw_data += backgroud_pixel
 								
-								format = "!%dsHHHH" % self.bypp
-								for _ in range(sub_rect_num):
-									data = await self.__reader.readexactly(self.bypp + 8)
-									(color, subx, suby, subwidth, subheight) = unpack(format, data)
-									r,g,b,a = unpack("BBBB", color)
-									a = 255
-									#rect = Image.new('RGBA', subwidth, subheight)
-									rect.paste((r,g,b,a), [subx,suby, subx+subwidth, suby+subheight])
-									#await self.__send_rect(subx + x, suby + y, width, height)
+								if sub_rect_num > 0:
+									subrect_size = (self.bypp + 8)*sub_rect_num
+									data = await self.__reader.readexactly(subrect_size)
+									raw_data += data
+								
+								raw_out = bytes(width*height*self.bypp)
+								rle.decode_rre(raw_out, raw_data, width, height, self.bypp)
+								
+								rect = Image.frombytes('RGBA', [width, height], raw_out)
 								await self.__send_rect(x,y, width, height, rect)
+
+								#### This is the pure-python version of RRE, kept here as a reminder
+								#### It's a bit slow compared to the C implementation
+								##
+								## sub_rect_num = await self.__reader.readexactly(4)
+								## sub_rect_num = int.from_bytes(sub_rect_num, byteorder = 'big', signed = False)
+								## backgroud_pixel = await self.__reader.readexactly(self.bypp)
+								## r,g,b,a = unpack("BBBB", backgroud_pixel)
+								## a = 255
+								## rect = Image.new('RGBA', [width, height])
+								## rect.paste((r,g,b,a), [0,0, width, height])
+								## 
+								## format = "!%dsHHHH" % self.bypp
+								## for _ in range(sub_rect_num):
+								## 	data = await self.__reader.readexactly(self.bypp + 8)
+								## 	(color, subx, suby, subwidth, subheight) = unpack(format, data)
+								## 	r,g,b,a = unpack("BBBB", color)
+								## 	a = 255
+								## 	rect.paste((r,g,b,a), [subx,suby, subx+subwidth, suby+subheight])
+								## await self.__send_rect(x,y, width, height, rect)
 							except Exception as e:
-								traceback.print_exc()
-								return
+								raise e
 						
 						
 						elif encoding == TRLE_ENCODING:
-							try:
-								sub_enc = await self.__reader.readexactly(1)
-								sub_enc = ord(sub_enc)
-								run_length_encoded = bool(sub_enc >> 7)
-								palette_size = sub_enc
-								if run_length_encoded is True:
-									palette_size -= 128
-								if palette_size == 0:
-									data = await self.__reader.readexactly(width*height*self.bypp)
-								elif palette_size == 1:
-									data = await self.__reader.readexactly(self.bypp)
-								
-								
-
-
-
-
-							except Exception as e:
-								traceback.print_exc()
-								return
+							raise NotImplementedError()
 
 						else:
-							print('Unknown encoding %s' % encoding)
+							raise Exception('Unknown encoding %s' % encoding)
+
 				elif msgtype == 1:
-					print('colormap')
+					# Colormap messages are only used in certain encoding formats, 
+					# none of which are currently implemented
+					# but the decoding process works
 					hdr = await self.__reader.readexactly(5)
 					(_, firstcolor, numcolor) = unpack("!BHH", hdr)
 					for _ in range(numcolor):
@@ -457,43 +631,51 @@ class VNCConnection:
 						(red, green, blue) = unpack("!HHH", color_raw)
 				
 				elif msgtype == 2:
-					print('bell')
+					# Server sent a Bell command, should cause a beep
+					msg = RDP_BEEP()
+					await self.ext_out_queue.put(msg)
 				
 				elif msgtype == 3:
+					# Server side has updated the clipboard
 					hdr = await self.__reader.readexactly(7)
 					(_,_,_, cliplen ) = unpack("!BBBI", hdr)
 					cliptext = await self.__reader.readexactly(cliplen)
-					cliptext = cliptext.decode()
-					print(cliptext)
+					cliptext = cliptext.decode('latin-1')
+					logger.info('Got clipboard test: %s' % repr(cliptext))
+					if self.__use_pyperclip is True:
+						import pyperclip
+						pyperclip.copy(cliptext)
+					
+					msg = RDP_CLIPBOARD_DATA_TXT()
+					msg.data = cliptext
+					msg.datatype = CLIPBRD_FORMAT.CF_UNICODETEXT
+					await self.ext_out_queue.put(msg)
+				
 				else:
-					print('Unexpected message tpye %s' % msgtype)
-
-				if msgtype == 0:
-					self.__frame_update_req_evt.set()
-
+					raise Exception('Unexpected message tpye %s' % msgtype)
 					
 			return True, None
 		except Exception as e:
+			await self.terminate()
 			return None, e
 
 	async def set_encodings(self, list_of_encodings = [2, 1, 0]):
+		"""Sends a setencoding message to the server, indicating the types of image encodings we support"""
 		try:
 			enc_encodings = b''
 			for encoding in list_of_encodings:
 				enc_encodings += encoding.to_bytes(4, byteorder = 'big', signed = True)
 			sendbuff = pack("!BxH", 2, len(list_of_encodings)) + enc_encodings
-			print(sendbuff)
 			self.__writer.write(sendbuff)
 			return True, None
 		except Exception as e:
 			return None, e
 		
 
-	async def set_pixel_format(self, bpp=32, depth=24, bigendian=0, truecolor=1, redmax=255, greenmax=255, bluemax=255,
-						 redshift=0, greenshift=8, blueshift=16):
-		pixformat = pack("!BBBBHHHBBBxxx", bpp, depth, bigendian, truecolor, redmax, greenmax, bluemax, redshift,
-						 greenshift, blueshift)
-		print(pixformat)
+	async def set_pixel_format(self, bpp=32, depth=24, bigendian=0, truecolor=1, redmax=255, greenmax=255, bluemax=255, redshift=0, greenshift=8, blueshift=16):
+		"""Sends a setpixelformat message to the server, letting the server know our preferred image data encodings"""
+
+		pixformat = pack("!BBBBHHHBBBxxx", bpp, depth, bigendian, truecolor, redmax, greenmax, bluemax, redshift, greenshift, blueshift)
 		self.__writer.write(b'\x00\x00\x00\x00' + pixformat)
 		# rember these settings
 		self.bpp, self.depth, self.bigendian, self.truecolor = bpp, depth, bigendian, truecolor
@@ -503,6 +685,7 @@ class VNCConnection:
 		# ~ print self.bypp
 
 	async def framebuffer_update_request(self, x=0, y=0, width=None, height=None, incremental=0):
+		"""Sends a framebufferupdaterequest message to the server, indicating the area to be updated"""
 		if width is None:
 			width = self.width - x
 
@@ -510,173 +693,6 @@ class VNCConnection:
 			height = self.height - y
 
 		self.__writer.write(pack("!BBHHHH", 3, incremental, x, y, width, height))
-	
-	def _handle_rectangle(self, block):
-		(x, y, width, height, encoding) = unpack("!HHHHI", block)
-		if self.rectangles:
-			self.rectangles -= 1
-			self.rectanglePos.append((x, y, width, height))
-			if encoding == COPY_RECTANGLE_ENCODING:
-				self._handleDecodeCopyrect( 4, x, y, width, height)
-			elif encoding == RAW_ENCODING:
-				self._handle_decode_raw( width * height * self.bypp, x, y, width, height)
-			elif encoding == HEXTILE_ENCODING:
-				self._do_next_hextile_subrect(None, None, x, y, width, height, None, None)
-			elif encoding == CORRE_ENCODING:
-				self._handle_decode_corre( 4 + self.bypp, x, y, width, height)
-			elif encoding == RRE_ENCODING:
-				self._handleDecodeRRE(4 + self.bypp, x, y, width, height)
-			else:
-				logger.msg("unknown encoding received (encoding %d)\n" % encoding)
-				self._do_connection()
-		else:
-			self._do_connection()
-	
-	def _handle_decode_raw(self, block, x, y, width, height):
-		# TODO convert pixel format?
-		self.update_rectangle(x, y, width, height, block)
-
-	def _handleDecodeCopyrect(self, block, x, y, width, height):
-		(srcx, srcy) = unpack("!HH", block)
-		self.copy_rectangle(srcx, srcy, x, y, width, height)
-	
-	def _handle_decode_corre_rectangles(self, block, topx, topy):
-		# ~ print "_handleDecodeCORRERectangle"
-		pos = 0
-		end = len(block)
-		sz = self.bypp + 4
-		format = "!%dsBBBB" % self.bypp
-		while pos < sz:
-			(color, x, y, width, height) = unpack(format, block[pos:pos + sz])
-			self.fill_rectangle(topx + x, topy + y, width, height, color)
-			pos += sz
-
-	def _do_next_hextile_subrect(self, bg, color, x, y, width, height, tx, ty):
-		"""
-		# Hextile Encoding
-		:param bg:
-		:param color:
-		:param x:
-		:param y:
-		:param width:
-		:param height:
-		:param tx:
-		:param ty:
-		:return:
-		"""
-		# ~ print "_doNextHextileSubrect %r" % ((color, x, y, width, height, tx, ty), )
-		# coords of next tile
-		# its line after line of tiles
-		# finished when the last line is completly received
-
-		# dont inc the first time
-		if tx is not None:
-			# calc next subrect pos
-			tx += 16
-			if tx >= x + width:
-				tx = x
-				ty += 16
-		else:
-			tx = x
-			ty = y
-		# more tiles?
-		if ty >= y + height:
-			self._do_connection() # read more!
-		else:
-			self._handle_decode_hextile(1, bg, color, x, y, width, height, tx, ty)
-	
-	def _handle_decode_hextile(self, block, bg, color, x, y, width, height, tx, ty):
-		"""
-		# Hextile Decoding
-		:param block:
-		:param bg:
-		:param color:
-		:param x:
-		:param y:
-		:param width:
-		:param height:
-		:param tx:
-		:param ty:
-		:return:
-		"""
-		(sub_encoding,) = unpack("!B", block)
-		# calc tile size
-		tw = th = 16
-		if x + width - tx < 16:
-			tw = x + width - tx
-
-		if y + height - ty < 16:
-			th = y + height - ty
-
-		# decode tile
-		if sub_encoding & 1:  # RAW
-			self._handle_decode_hextile_raw( tw * th * self.bypp, bg, color, x, y, width, height, tx, ty, tw, th)
-		else:
-			num_bytes = 0
-			if sub_encoding & 2:  # BackgroundSpecified
-				num_bytes += self.bypp
-			if sub_encoding & 4:  # ForegroundSpecified
-				num_bytes += self.bypp
-			if sub_encoding & 8:  # AnySubrects
-				num_bytes += 1
-			if num_bytes:
-				self._handle_decode_hextile_subrect(num_bytes, sub_encoding, bg, color, x, y, width, height, tx, ty, tw, th)
-			else:
-				self.fill_rectangle(tx, ty, tw, th, bg)
-				self._do_next_hextile_subrect(bg, color, x, y, width, height, tx, ty)
-	
-	def _handle_decode_hextile_raw(self, block, bg, color, x, y, width, height, tx, ty, tw, th):
-		"""the tile is in raw encoding"""
-		self.update_rectangle(tx, ty, tw, th, block)
-		self._do_next_hextile_subrect(bg, color, x, y, width, height, tx, ty)
-	
-	def _handle_decode_corre_rectangles(self, block, topx, topy):
-		# ~ print "_handleDecodeCORRERectangle"
-		pos = 0
-		end = len(block)
-		sz = self.bypp + 4
-		format = "!%dsBBBB" % self.bypp
-		while pos < sz:
-			(color, x, y, width, height) = unpack(format, block[pos:pos + sz])
-			self.fill_rectangle(topx + x, topy + y, width, height, color)
-			pos += sz
-	
-	def _handleDecodeRRE(self, block, x, y, width, height):
-		(subrects,) = unpack("!I", block[:4])
-		color = block[4:]
-		self.fill_rectangle(x, y, width, height, color)
-		self._handle_rre_sub_rectangles((8 + self.bypp) * subrects, x, y)
-	
-	def _handle_rre_sub_rectangles(self, block, topx, topy):
-		"""
-		# RRE Sub Rectangles
-		:param block:
-		:param topx:
-		:param topy:
-		:return:
-		"""
-
-		pos = 0
-		end = len(block)
-		sz = self.bypp + 8
-		format = "!%dsHHHH" % self.bypp
-		while pos < end:
-			(color, x, y, width, height) = unpack(format, block[pos:pos + sz])
-			self.fill_rectangle(topx + x, topy + y, width, height, color)
-			pos += sz
-
-	def fill_rectangle(self, x, y, width, height, color):
-		"""fill the area with the color. the color is a string in
-		   the pixel format set up earlier"""
-		# fallback variant, use update recatngle
-		# override with specialized function for better performance
-		self.update_rectangle(x, y, width, height, color * width * height)
-
-	def update_rectangle(self, x, y, width, height, size):
-		print(x, y, width, height, size)
-
-	def copy_rectangle(self, srcx, srcy, x, y, width, height):
-		print(srcx, srcy, x, y, width, height)
 
 async def amain():
 	try:
@@ -685,13 +701,11 @@ async def amain():
 		from aardwolf.commons.iosettings import RDPIOSettings
 
 		iosettings = RDPIOSettings()
-		iosettings.video_out_format = 'raw'
+		iosettings.video_out_format = VIDEO_FORMAT.RAW
 		
 		url = 'vnc+plain://alma:alma@10.10.10.102:5900'
 		url = RDPConnectionURL(url)
 		connection = url.get_connection(iosettings)
-		print(connection)
-		print(connection.target.port)
 
 		_, err = await connection.connect()
 		if err is not None:

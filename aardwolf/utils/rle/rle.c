@@ -973,6 +973,63 @@ convert_rgbx_rgba(uint8 *decomp_buff, int decomp_buff_size, uint8 *dst, int dst_
 	}
 }
 
+static int
+decode_rre(uint8 *rre_buff, int rre_buff_size, uint8 *dst, int dst_size, uint bypp, uint width, uint height){
+	uint sub_rect_num = (rre_buff[0] << 24) + (rre_buff[1] << 16) + (rre_buff[2] << 8) + rre_buff[3];
+	uint sub_rect_num_bytes = sub_rect_num*12;
+	uint rectangle_pixel_count = width*height;
+	uint rectangle_size = rectangle_pixel_count*bypp;
+	uint subrectangle_pixel_count, subrect_color_offset, subwidth_bytes = 0;
+	ushort subx, suby, subwidth, subheight, substart = 0;
+
+	if(rectangle_size > dst_size){
+		return 1;
+	}
+
+	// filling rectangle with default pattern
+	for(uint i = 0; i< rectangle_size; i += bypp){
+		dst[i] = rre_buff[4];
+		dst[i+1] = rre_buff[5];
+		dst[i+2] = rre_buff[6];
+		dst[i+3] = 0xff; // alpha channel
+	}
+	
+	if((((sub_rect_num*12)+8)) != (uint)rre_buff_size){
+		printf("sub_rect_num %d\r\n", sub_rect_num);
+		printf("boundary %d\r\n", ((sub_rect_num*12)+8));
+		printf("rre_buff_size %d\r\n", rre_buff_size);
+		return 1;
+	}
+
+	for(uint i =0; i < sub_rect_num_bytes; i+=12){
+		//memo: 12 = 4(RGBX) + subx, suby, subwidth, subheight
+		subx = (rre_buff[8+4+i] << 8) + rre_buff[8+5+i];
+		suby = (rre_buff[8+6+i] << 8) + rre_buff[8+7+i];
+		subwidth = (rre_buff[8+8+i] << 8) + rre_buff[8+9+i];
+		subwidth_bytes = subwidth*4;
+		subheight = (rre_buff[8+10+i] << 8) + rre_buff[8+11+i];
+		subrectangle_pixel_count = subwidth*subheight;
+		subrect_color_offset = 8+i; // 8 is the start of subrects
+
+		for(uint j = 0; j< subrectangle_pixel_count; j += 1){
+			for(uint y = 0; y < subheight; y += 1){
+				substart = (subx + ((suby+y)*width))*bypp;
+				if(substart > (uint)dst_size || substart + subwidth_bytes > (uint)dst_size){
+					return 1;
+				}
+				for(uint x = 0; x < subwidth_bytes; x += 4){
+					dst[substart+x] = rre_buff[subrect_color_offset];
+					dst[substart+x+1] = rre_buff[subrect_color_offset+1];
+					dst[substart+x+2] = rre_buff[subrect_color_offset+2];
+					dst[substart+x+3] = 0xff; // alpha channel
+				}
+			}
+		}
+	}
+	return 0;
+
+}
+
 /* *INDENT-ON* */
 
 static PyObject*
@@ -1040,6 +1097,26 @@ mask_rgbx_wrapper(PyObject* self, PyObject* args)
 	}
 
 	convert_rgbx_rgba((uint8*)input.buf, input.len, (uint8*)output.buf, output.len);
+		
+
+	Py_RETURN_NONE;
+}
+
+static PyObject*
+decode_rre_wrapper(PyObject* self, PyObject* args)
+{
+	Py_buffer output, input;
+	int width = 0, height = 0, bypp = 0;
+
+	if (!PyArg_ParseTuple(args, "s*s*iii", &output, &input, &width, &height, &bypp)){
+		PyErr_SetString(PyExc_TypeError, "Input parameter error");
+		return (PyObject *) NULL;
+	}
+	
+	if(decode_rre((uint8*)input.buf, input.len, (uint8*)output.buf, output.len, bypp, width, height)){
+		PyErr_SetString(PyExc_TypeError, "Decode failed!");
+		return (PyObject *) NULL;
+	}
 	
 	Py_RETURN_NONE;
 }
@@ -1048,6 +1125,7 @@ static PyMethodDef rle_methods[] =
 {
      {"bitmap_decompress", bitmap_decompress_wrapper, METH_VARARGS, "decompress bitmap from microsoft rle algorithm."},
 	 {"mask_rgbx", mask_rgbx_wrapper, METH_VARARGS, "Converts RGBX to RGBA"},
+	 {"decode_rre", decode_rre_wrapper, METH_VARARGS, "Converts RRE encoded data to RGBA recatngle"},
      {NULL, NULL, 0, NULL}
 };
 

@@ -7,6 +7,7 @@ from collections import OrderedDict
 
 import asn1tools
 from aardwolf import logger
+from aardwolf.commons.queuedata.constants import MOUSEBUTTON
 from aardwolf.network.selector import NetworkSelector
 from aardwolf.commons.credential import RDPCredentialsSecretType
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
@@ -53,8 +54,8 @@ class RDPConnection:
 		self.disconnected_evt = asyncio.Event() #this will be set if we disconnect for whatever reason
 
 		# these are the main queues with which you can communicate with the server
-		# ext_out_queue: yields video data
-		# ext_in_queue: expects keyboard/mouse data
+		# ext_out_queue: yields video,clipboard,bell data
+		# ext_in_queue: expects keyboard/mouse/clipboard data
 		self.ext_out_queue = asyncio.Queue()
 		self.ext_in_queue = asyncio.Queue()
 
@@ -88,6 +89,54 @@ class RDPConnection:
 		self.client_x224_supported_protocols = self.iosettings.supported_protocols 
 		self.cryptolayer:RDPCryptoLayer = None
 		self.__fastpath_in_queue = None
+
+		self.__vk_to_sc = {
+			'VK_BACK'     : 14,
+			'VK_ESCAPE'   : 1,
+			'VK_TAB'      : 15,
+			'VK_RETURN'   : 28,
+			'VK_INSERT'   : 82,
+			'VK_DELETE'   : 83,
+			'VK_HOME'     : 71,
+			'VK_END'      : 79,
+			'VK_PRIOR'    : 73,
+			'VK_NEXT'     : 81,
+			'VK_LEFT'     : 75,
+			'VK_UP'       : 72,
+			'VK_RIGHT'    : 77,
+			'VK_DOWN'     : 80,
+			'VK_F1'       : 59,
+			'VK_F2'       : 60,
+			'VK_F3'       : 61,
+			'VK_F4'       : 62,
+			'VK_F5'       : 63,
+			'VK_F6'       : 64,
+			'VK_F7'       : 65,
+			'VK_F8'       : 66,
+			'VK_F9'       : 67,
+			'VK_F10'      : 68,
+			'VK_F11'      : 87,
+			'VK_F12'      : 88,
+			'VK_LSHIFT'   : 42,
+			'VK_RSHIFT'   : 54,
+			'VK_LCONTROL' : 29,
+			'VK_LWIN'     : 57435,
+			'VK_RWIN'     : 57436,
+			'VK_LMENU'    : 56,
+			'VK_SCROLL'   : 70,
+			'VK_NUMLOCK'  : 69,
+			'VK_CAPITAL'  : 58,
+			'VK_PAUSE'    : 57629,
+			'VK_MULTIPLY' : 55,
+			'VK_ADD'      : 78,
+			'VK_SUBTRACT' : 74,
+			'VK_DIVIDE'   : 57397,
+			'VK_SNAPSHOT' : 84,
+			'VK_RCONTROL' : 57373,
+			'VK_RMENU'    : 57400,
+			#'VK_DBE_NOCODEINPUT': 98, # except on KLID: 00000412 (ko)
+			#'VK_DECIMAL' not found anywhere?
+		}
 
 	
 	async def terminate(self):
@@ -269,6 +318,7 @@ class RDPConnection:
 			return None, e
 	
 	def get_extra_info(self):
+		# for NTLM fingerprinting
 		ntlm_data = self.authapi.get_extra_info()
 		if ntlm_data is not None:
 			return ntlm_data.to_dict()
@@ -958,7 +1008,7 @@ class RDPConnection:
 		# Fastpath was introduced to the RDP specs to speed up data transmission
 		# by reducing 4 useless layers from the traffic.
 		# Transmission on this channel starts immediately after connection sequence
-		# mostly video and pointer related info coming in from the server.
+		# mostly video and channel related info coming in from the server.
 		# interesting note: it seems newer servers (>=win2016) only support this protocol of sending
 		# high bandwith traffic. If you disable fastpath (during connection sequence) you won't
 		# get images at all
@@ -995,6 +1045,122 @@ class RDPConnection:
 			return None, e
 		finally:
 			await self.terminate()
+
+	async def send_key_virtualkey(self, vk, is_pressed, is_extended, scancode_hint = None):
+		try:
+			if vk in self.__vk_to_sc:
+				scancode = self.__vk_to_sc[vk]
+				is_extended = True
+				print('EXT')
+			else:
+				scancode = scancode_hint
+			return await self.send_key_scancode(scancode, is_pressed, is_extended)
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+	
+	async def send_key_scancode(self, scancode, is_pressed, is_extended):
+		try:
+			data_hdr = TS_SHAREDATAHEADER()
+			data_hdr.shareID = 0x103EA
+			data_hdr.streamID = STREAM_TYPE.MED
+			data_hdr.pduType2 = PDUTYPE2.INPUT
+			
+			kbi = TS_KEYBOARD_EVENT()
+			kbi.keyCode = scancode
+			kbi.keyboardFlags = 0
+			if is_pressed is False:
+				kbi.keyboardFlags |= KBDFLAGS.RELEASE
+			if is_extended is True or kbi.keyCode > 57000:
+				kbi.keyboardFlags |= KBDFLAGS.EXTENDED
+			clii_kb = TS_INPUT_EVENT.from_input(kbi)
+			cli_input = TS_INPUT_PDU_DATA()
+			cli_input.slowPathInputEvents.append(clii_kb)
+			
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+
+			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+				
+
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+
+	async def send_key_char(self, char, is_pressed):
+		try:
+			data_hdr = TS_SHAREDATAHEADER()
+			data_hdr.shareID = 0x103EA
+			data_hdr.streamID = STREAM_TYPE.MED
+			data_hdr.pduType2 = PDUTYPE2.INPUT
+			
+			kbi = TS_UNICODE_KEYBOARD_EVENT()
+			kbi.unicodeCode = char
+			kbi.keyboardFlags = 0
+			if is_pressed is False:
+				kbi.keyboardFlags |= KBDFLAGS.RELEASE
+			clii_kb = TS_INPUT_EVENT.from_input(kbi)
+			cli_input = TS_INPUT_PDU_DATA()
+			cli_input.slowPathInputEvents.append(clii_kb)
+
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+
+			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			return True, None
+
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+
+	async def send_mouse(self, button, xPos, yPos, is_pressed):
+		try:
+			if xPos < 0 or yPos < 0:
+				return True, None
+			data_hdr = TS_SHAREDATAHEADER()
+			data_hdr.shareID = 0x103EA
+			data_hdr.streamID = STREAM_TYPE.MED
+			data_hdr.pduType2 = PDUTYPE2.INPUT
+			
+			mouse = TS_POINTER_EVENT()
+			mouse.pointerFlags = 0
+			if is_pressed is True:
+				mouse.pointerFlags |= PTRFLAGS.DOWN
+			if button == MOUSEBUTTON.MOUSEBUTTON_LEFT:
+				mouse.pointerFlags |= PTRFLAGS.BUTTON1
+			if button == MOUSEBUTTON.MOUSEBUTTON_RIGHT:
+				mouse.pointerFlags |= PTRFLAGS.BUTTON2
+			if button == MOUSEBUTTON.MOUSEBUTTON_MIDDLE:
+				mouse.pointerFlags |= PTRFLAGS.BUTTON3
+			if button == MOUSEBUTTON.MOUSEBUTTON_HOVER:
+				# indicates a simple pointer update with no buttons pressed
+				# sending this enables the mouse hover feel on the remote end
+				mouse.pointerFlags |= PTRFLAGS.MOVE
+			mouse.xPos = xPos
+			mouse.yPos = yPos
+
+			clii_mouse = TS_INPUT_EVENT.from_input(mouse)
+					
+			cli_input = TS_INPUT_PDU_DATA()
+			cli_input.slowPathInputEvents.append(clii_mouse)
+
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+
+					
+			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
 	
 	async def __external_reader(self):
 		# This coroutine handles keyboard/mouse etc input from the user
@@ -1008,93 +1174,18 @@ class RDPConnection:
 					return
 				if indata.type == RDPDATATYPE.KEYSCAN:
 					indata = cast(RDP_KEYBOARD_SCANCODE, indata)
-					data_hdr = TS_SHAREDATAHEADER()
-					data_hdr.shareID = 0x103EA
-					data_hdr.streamID = STREAM_TYPE.MED
-					data_hdr.pduType2 = PDUTYPE2.INPUT
+					if indata.vk_code is not None:
+						await self.send_key_virtualkey(indata.vk_code, indata.is_pressed, indata.is_extended, scancode_hint=indata.keyCode)
+					else:
+						await self.send_key_scancode(indata.keyCode, indata.is_pressed, indata.is_extended)
 					
-					kbi = TS_KEYBOARD_EVENT()
-					kbi.keyCode = indata.keyCode
-					kbi.keyboardFlags = 0
-					if indata.is_pressed is False:
-						kbi.keyboardFlags |= KBDFLAGS.RELEASE
-					if indata.is_extended is True:
-						kbi.keyboardFlags |= KBDFLAGS.EXTENDED
-					clii_kb = TS_INPUT_EVENT.from_input(kbi)
-					cli_input = TS_INPUT_PDU_DATA()
-					cli_input.slowPathInputEvents.append(clii_kb)
-
-					sec_hdr = None
-					if self.cryptolayer is not None:
-						sec_hdr = TS_SECURITY_HEADER()
-						sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
-						sec_hdr.flagsHi = 0
-
-					await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
-				
-				if indata.type == RDPDATATYPE.KEYUNICODE:
+				elif indata.type == RDPDATATYPE.KEYUNICODE:
 					indata = cast(RDP_KEYBOARD_UNICODE, indata)
-					data_hdr = TS_SHAREDATAHEADER()
-					data_hdr.shareID = 0x103EA
-					data_hdr.streamID = STREAM_TYPE.MED
-					data_hdr.pduType2 = PDUTYPE2.INPUT
-					
-					kbi = TS_UNICODE_KEYBOARD_EVENT()
-					kbi.unicodeCode = indata.char
-					kbi.keyboardFlags = 0
-					if indata.is_pressed is False:
-						kbi.keyboardFlags |= KBDFLAGS.RELEASE
-					clii_kb = TS_INPUT_EVENT.from_input(kbi)
-					cli_input = TS_INPUT_PDU_DATA()
-					cli_input.slowPathInputEvents.append(clii_kb)
+					await self.send_key_char(indata.char, indata.is_pressed)
 
-					sec_hdr = None
-					if self.cryptolayer is not None:
-						sec_hdr = TS_SECURITY_HEADER()
-						sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
-						sec_hdr.flagsHi = 0
-
-					await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
-			
 				elif indata.type == RDPDATATYPE.MOUSE:
 					indata = cast(RDP_MOUSE, indata)
-					if indata.xPos < 0 or indata.yPos < 0:
-						continue
-					data_hdr = TS_SHAREDATAHEADER()
-					data_hdr.shareID = 0x103EA
-					data_hdr.streamID = STREAM_TYPE.MED
-					data_hdr.pduType2 = PDUTYPE2.INPUT
-					
-					mouse = TS_POINTER_EVENT()
-					mouse.pointerFlags = 0
-					if indata.pressed is True:
-						mouse.pointerFlags |= PTRFLAGS.DOWN
-					if indata.button == 1:
-						mouse.pointerFlags |= PTRFLAGS.BUTTON1
-					if indata.button == 2:
-						mouse.pointerFlags |= PTRFLAGS.BUTTON2
-					if indata.button == 3:
-						mouse.pointerFlags |= PTRFLAGS.BUTTON3
-					if indata.button == 0:
-						# indicates a simple pointer update with no buttons pressed
-						# sending this enables the mouse hover feel on the remote end
-						mouse.pointerFlags |= PTRFLAGS.MOVE
-					mouse.xPos = indata.xPos
-					mouse.yPos = indata.yPos
-
-					clii_mouse = TS_INPUT_EVENT.from_input(mouse)
-					
-					cli_input = TS_INPUT_PDU_DATA()
-					cli_input.slowPathInputEvents.append(clii_mouse)
-
-					sec_hdr = None
-					if self.cryptolayer is not None:
-						sec_hdr = TS_SECURITY_HEADER()
-						sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
-						sec_hdr.flagsHi = 0
-
-					
-					await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+					await self.send_mouse(indata.button, indata.xPos, indata.yPos, indata.is_pressed)
 
 				elif indata.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
 					if 'cliprdr' not in self.__joined_channels:
@@ -1107,6 +1198,7 @@ class RDPConnection:
 
 		except Exception as e:
 			traceback.print_exc()
+			await self.terminate()
 			return None, e
 	
 	async def handle_out_data(self, dataobj, sec_hdr, datacontrol_hdr, sharecontrol_hdr, channel_id, is_fastpath):
@@ -1167,6 +1259,7 @@ class RDPConnection:
 
 		except Exception as e:
 			traceback.print_exc()
+			await self.terminate()
 			return None, e
 		
 	

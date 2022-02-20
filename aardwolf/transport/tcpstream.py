@@ -26,7 +26,7 @@ class TCPStreamWriter:
 		self.out_queue.put_nowait(data)
 
 	def close(self):
-		self.out_queue.put_nowait(None)
+		self.out_queue.put_nowait(b'')
 		self.closed_event.set()
 
 	async def drain(self):
