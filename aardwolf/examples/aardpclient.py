@@ -380,7 +380,7 @@ def main():
 	iosettings.video_height = height
 	iosettings.video_bpp_min = 15 #servers dont support 8 any more :/
 	iosettings.video_bpp_max = args.bpp
-	iosettings.video_out_format = VIDEO_FORMAT.QT5
+	iosettings.video_out_format = VIDEO_FORMAT.PIL
 	iosettings.ducky_file = args.ducky
 	
 	settings = RDPClientConsoleSettings(args.url, iosettings)

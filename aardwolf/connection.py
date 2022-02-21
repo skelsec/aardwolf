@@ -2,12 +2,15 @@
 import traceback
 import asyncio
 import typing
+import copy
 from typing import cast
 from collections import OrderedDict
 
 import asn1tools
+from PIL import Image
 from aardwolf import logger
-from aardwolf.commons.queuedata.constants import MOUSEBUTTON
+from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
+from aardwolf.commons.target import RDPTarget
 from aardwolf.network.selector import NetworkSelector
 from aardwolf.commons.credential import RDPCredentialsSecretType
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
@@ -43,10 +46,11 @@ from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FA
 from aardwolf.commons.queuedata import *
 from aardwolf.commons.authbuilder import AuthenticatorBuilder
 from aardwolf.channels import Channel
+from aardwolf.commons.iosettings import RDPIOSettings
 
 
 class RDPConnection:
-	def __init__(self, target, credentials, iosettings):
+	def __init__(self, target:RDPTarget, credentials, iosettings:RDPIOSettings):
 		self.target = target
 		self.credentials = credentials
 		self.authapi = None
@@ -89,6 +93,8 @@ class RDPConnection:
 		self.client_x224_supported_protocols = self.iosettings.supported_protocols 
 		self.cryptolayer:RDPCryptoLayer = None
 		self.__fastpath_in_queue = None
+		self.__desktop_buffer = None
+		self.desktop_buffer_has_data = False
 
 		self.__vk_to_sc = {
 			'VK_BACK'     : 14,
@@ -312,6 +318,7 @@ class RDPConnection:
 
 			self.__external_reader_task = asyncio.create_task(self.__external_reader())
 			logger.debug('RDP connection sequence done')
+			self.__desktop_buffer = Image.new(mode="RGBA", size=(self.iosettings.video_width, self.iosettings.video_height))
 			return True, None
 		except Exception as e:
 			self.disconnected_evt.set()
@@ -1025,7 +1032,10 @@ class RDPConnection:
 						print('WARNING! FRAGMENTATION IS NOT IMPLEMENTED! %s' % fpdu.fpOutputUpdates.fragmentation)
 					if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.BITMAP:
 						for bitmapdata in fpdu.fpOutputUpdates.update.rectangles:
-							await self.ext_out_queue.put(RDP_VIDEO.from_bitmapdata(bitmapdata, self.iosettings.video_out_format))
+							self.desktop_buffer_has_data = True
+							res, image = RDP_VIDEO.from_bitmapdata(bitmapdata, self.iosettings.video_out_format)
+							self.__desktop_buffer.paste(image, [res.x, res.y, res.x+res.width, res.y+res.height])
+							await self.ext_out_queue.put(res)
 					#else:
 					#	#print(fpdu.fpOutputUpdates.updateCode)
 					#	#if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.CACHED:
@@ -1119,7 +1129,7 @@ class RDPConnection:
 			traceback.print_exc()
 			return None, e
 
-	async def send_mouse(self, button, xPos, yPos, is_pressed):
+	async def send_mouse(self, button:MOUSEBUTTON, xPos:int, yPos:int, is_pressed:bool):
 		try:
 			if xPos < 0 or yPos < 0:
 				return True, None
@@ -1158,6 +1168,27 @@ class RDPConnection:
 
 					
 			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+
+	def get_desktop_buffer(self, encoding:VIDEO_FORMAT = VIDEO_FORMAT.PIL):
+		"""Makes a copy of the current desktop buffer, converts it and returns the object"""
+		try:
+			image = copy.deepcopy(self.__desktop_buffer)
+			if encoding == VIDEO_FORMAT.PIL:
+				return image
+			elif encoding == VIDEO_FORMAT.RAW:
+				return image.tobytes()
+			elif encoding == VIDEO_FORMAT.QT5:
+				from PIL.ImageQt import ImageQt
+				return ImageQt(image)
+			elif encoding == VIDEO_FORMAT.PNG:
+				img_byte_arr = io.BytesIO()
+				image.save(img_byte_arr, format='PNG')
+				return img_byte_arr.getvalue()
+			else:
+				raise ValueError('Output format of "%s" is not supported!' % encoding)
 		except Exception as e:
 			traceback.print_exc()
 			return None, e

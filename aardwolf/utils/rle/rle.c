@@ -22,6 +22,8 @@ Added few modifications:
 The code now ALWAYS returns RGB32 format regardless of input bpp. Makes life easier on upper levels.
 The code also takes non-compressed input (and a flag that indicates wether it's compressed or not.)
 Non-compressed data will be only converted to RGB32.
+There are some out-of-bounds write possibilities in the RRE decoder.
+
 Mod author: Tamas Jos @skelsec
 */
 

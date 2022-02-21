@@ -7,6 +7,7 @@
 # TODO: Add mouse scroll functionality (QT5 client needs to be modified for that)
 
 import io
+import copy
 import asyncio
 import traceback
 from struct import pack, unpack
@@ -24,9 +25,14 @@ from aardwolf.protocol.vnc.keyboard import *
 from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
+from aardwolf.commons.iosettings import RDPIOSettings
 
 from PIL import Image
-from PIL.ImageQt import ImageQt
+try:
+	from PIL.ImageQt import ImageQt
+except ImportError:
+	print('No Qt installed! Converting to qt will not work')
+
 import rle
 
 # https://datatracker.ietf.org/doc/html/rfc6143
@@ -43,7 +49,7 @@ TRLE_ENCODING = 15
 ZRLE_ENCODING = 16
 
 class VNCConnection:
-	def __init__(self, target, credentials, iosettings):
+	def __init__(self, target, credentials, iosettings:RDPIOSettings):
 		self.target = target
 		self.credentials = credentials
 		self.authapi = None
@@ -84,6 +90,7 @@ class VNCConnection:
 		self.width = None
 		self.height = None
 		self.__desktop_buffer = None
+		self.desktop_buffer_has_data = False
 
 		self.__vk_to_vnckey = {
 			'VK_BACK' : KEY_BackSpace,
@@ -157,7 +164,7 @@ class VNCConnection:
 			'VK_SNAPSHOT' : KEY_Print,
 			'VK_DBE_NOCODEINPUT' : KEY_KP_Divide,
 		}
-		
+
 		self.__keyboard_layout = KeyboardLayoutManager().get_layout_by_shortname(self.iosettings.client_keyboard)
 	
 	async def terminate(self):
@@ -226,8 +233,12 @@ class VNCConnection:
 				raise err
 			logger.debug('Client init OK')
 
+			logger.debug('Starting internal comm channels')
 			self.__reader_loop_task = asyncio.create_task(self.__reader_loop())
 			self.__external_reader_task = asyncio.create_task(self.__external_reader())
+			logger.debug('Sending cliboard ready signal') #to emulate RDP clipboard functionality
+			msg = RDP_CLIPBOARD_READY()
+			await self.ext_out_queue.put(msg)
 			
 			return True, None
 		except Exception as e:
@@ -273,8 +284,17 @@ class VNCConnection:
 			sec_types = await self.__reader.readexactly(no_sec_types)
 			for sectype in sec_types:
 				self.server_supp_security_types.append(sectype)
+
+			if self.__selected_security_type == 0:
+				logger.debug('Invalid authentication type!!!')
+				raise Exception('Invalid authentication type')
 			
-			if self.__selected_security_type == 2:
+			elif self.__selected_security_type == 1:
+				# nothing to do here
+				logger.debug('Selecting NULL auth type')
+
+			
+			elif self.__selected_security_type == 2:
 				logger.debug('Selecting default VNC auth type')
 				self.__writer.write(bytes([self.__selected_security_type]))
 				challenge = await self.__reader.readexactly(16)
@@ -349,6 +369,116 @@ class VNCConnection:
 			self.__refresh_screen_task = asyncio.create_task(self.__refresh_screen_loop())
 			return True, None
 		except Exception as e:
+			return None, e
+	
+	async def send_key_virtualkey(self, vk:str, is_pressed:bool, is_extended:bool, scancode_hint:int = None):
+		try:
+			if indata.vk_code is not None:
+				vk_code = indata.vk_code
+			else:
+				vk_code = self.__keyboard_layout.scancode_to_vk(indata.keyCode)
+			print('Got VK: %s' % vk_code)
+			if vk_code is None:
+				print('Could not map SC to VK! SC: %s' % indata.keyCode)
+			if vk_code is not None and vk_code in self.__vk_to_vnckey:
+				keycode = self.__vk_to_vnckey[vk_code]
+				print('AAAAAAAA %s' % hex(keycode))
+
+
+			if vk in self.__vk_to_sc:
+				scancode = self.__vk_to_sc[vk]
+				is_extended = True
+				print('EXT')
+			else:
+				scancode = scancode_hint
+			return await self.send_key_char(scancode, is_pressed, is_extended)
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+
+	async def send_key_scancode(self, scancode, is_pressed, is_extended):
+		try:
+			keycode = self.__keyboard_layout.scancode_to_char(indata.keyCode, modifiers)
+			print(keycode)
+			if keycode is None:
+				print('Failed to resolv key! SC: %s VK: %s' % (indata.keyCode, vk_code))
+				#continue
+			elif keycode is not None and len(keycode) == 1:
+				keycode = ord(keycode)
+				print('Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
+			elif keycode is not None and len(keycode) > 1:
+				print('LARGE! Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
+				#continue
+			else:
+				print('This key is too special! Can\'t resolve it! SC: %s VK: %s' % (indata.keyCode, vk_code))
+				#continue
+
+			return True, None
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+
+	async def send_key_char(self, char, is_pressed):
+		try:
+			msg = pack("!BBxxI", 4, int(is_pressed), char)
+			self.__writer.write(msg)
+			return True, None
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+
+	async def send_mouse(self, button:MOUSEBUTTON, xPos:int, yPos:int, is_pressed:bool):
+		try:
+			if xPos < 0 or yPos < 0:
+				return True, None
+
+			button =0
+			if button == MOUSEBUTTON.MOUSEBUTTON_LEFT:
+				button = 1
+			elif button == MOUSEBUTTON.MOUSEBUTTON_MIDDLE:
+				button = 2
+			elif button == MOUSEBUTTON.MOUSEBUTTON_RIGHT:
+				button = 3
+			
+			buttonmask = 0
+			if is_pressed is True:
+				if button == 1: buttonmask &= ~1
+				if button == 2: buttonmask &= ~2
+				if button == 3: buttonmask &= ~4
+				if button == 4: buttonmask &= ~8
+				if button == 5: buttonmask &= ~16
+			else:
+				if button == 1: buttonmask |= 1
+				if button == 2: buttonmask |= 2
+				if button == 3: buttonmask |= 4
+				if button == 4: buttonmask |= 8
+				if button == 5: buttonmask |= 16
+			
+			msg = pack("!BBHH", 5, buttonmask, xPos, yPos)
+			self.__writer.write(msg)
+			return True, None
+		except Exception as e:
+			traceback.print_exc()
+			return None, e
+
+	def get_desktop_buffer(self, encoding:VIDEO_FORMAT = VIDEO_FORMAT.PIL):
+		"""Makes a copy of the current desktop buffer, converts it and returns the object"""
+		try:
+			image = self.__desktop_buffer.copy()
+			if encoding == VIDEO_FORMAT.PIL:
+				return image
+			elif encoding == VIDEO_FORMAT.RAW:
+				return image.tobytes()
+			elif encoding == VIDEO_FORMAT.QT5:
+				return ImageQt(image)
+			elif encoding == VIDEO_FORMAT.PNG:
+				img_byte_arr = io.BytesIO()
+				image.save(img_byte_arr, format='PNG')
+				return img_byte_arr.getvalue()
+			else:
+				raise ValueError('Output format of "%s" is not supported!' % encoding)
+		except Exception as e:
+			traceback.print_exc()
 			return None, e
 
 	async def __external_reader(self):
@@ -429,8 +559,7 @@ class VNCConnection:
 						else:
 							# I hope you know what you're doing here...
 							keycode = int.from_bytes(bytes.fromhex(keycode), byteorder = 'big', signed = False)
-					msg = pack("!BBxxI", 4, int(indata.is_pressed), indata.char)
-					self.__writer.write(msg)
+					await self.send_key_char(keycode, indata.is_pressed)
 			
 				elif indata.type == RDPDATATYPE.MOUSE:
 					#PointerEvent
@@ -438,32 +567,7 @@ class VNCConnection:
 					if indata.xPos < 0 or indata.yPos < 0:
 						continue
 					
-					button =0
-					if indata.button == MOUSEBUTTON.MOUSEBUTTON_LEFT:
-						button = 1
-					elif indata.button == MOUSEBUTTON.MOUSEBUTTON_MIDDLE:
-						button = 2
-					elif indata.button == MOUSEBUTTON.MOUSEBUTTON_RIGHT:
-						button = 3
-					
-					buttonmask = 0
-					if indata.is_pressed is True:
-						if button == 1: buttonmask &= ~1
-						if button == 2: buttonmask &= ~2
-						if button == 3: buttonmask &= ~4
-						if button == 4: buttonmask &= ~8
-						if button == 5: buttonmask &= ~16
-					else:
-						if button == 1: buttonmask |= 1
-						if button == 2: buttonmask |= 2
-						if button == 3: buttonmask |= 4
-						if button == 4: buttonmask |= 8
-						if button == 5: buttonmask |= 16
-
-					
-					#print('sending mouse!')
-					msg = pack("!BBHH", 5, buttonmask, indata.xPos, indata.yPos)
-					self.__writer.write(msg)
+					await self.send_mouse(indata.button, indata.xPos, indata.yPos, indata.is_pressed)
 
 				elif indata.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
 					try:
@@ -500,6 +604,7 @@ class VNCConnection:
 	async def __send_rect(self, x, y, width, height, image:Image):
 		try:
 			#updating desktop buffer to have a way to copy rectangles later
+			self.desktop_buffer_has_data = True
 			if self.width == width and self.height == height:
 				self.__desktop_buffer = image
 			else:
@@ -528,13 +633,10 @@ class VNCConnection:
 			rect.data = image
 			await self.ext_out_queue.put(rect)
 
-
 		except Exception as e:
 			await self.terminate()
 			return None, e
 
-		
-	
 	async def __reader_loop(self):
 		try:
 			while True:
@@ -637,10 +739,16 @@ class VNCConnection:
 				
 				elif msgtype == 3:
 					# Server side has updated the clipboard
+					
+					# Signaling clipboard data (to simulate RDP functionality)
+					msg = RDP_CLIPBOARD_NEW_DATA_AVAILABLE()
+					await self.ext_out_queue.put(msg)
+
+					# processing clipboard data
 					hdr = await self.__reader.readexactly(7)
 					(_,_,_, cliplen ) = unpack("!BBBI", hdr)
 					cliptext = await self.__reader.readexactly(cliplen)
-					cliptext = cliptext.decode('latin-1')
+					cliptext = cliptext.decode('latin-1') #latin-1 is per RFC
 					logger.info('Got clipboard test: %s' % repr(cliptext))
 					if self.__use_pyperclip is True:
 						import pyperclip
