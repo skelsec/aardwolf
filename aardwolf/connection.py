@@ -133,13 +133,14 @@ class RDPConnection:
 			'VK_SCROLL'   : 70,
 			'VK_NUMLOCK'  : 69,
 			'VK_CAPITAL'  : 58,
-			'VK_PAUSE'    : 57629,
+			'VK_RCONTROL' : 57629,
 			'VK_MULTIPLY' : 55,
 			'VK_ADD'      : 78,
 			'VK_SUBTRACT' : 74,
 			'VK_DIVIDE'   : 57397,
 			'VK_SNAPSHOT' : 84,
-			'VK_RCONTROL' : 57373,
+			#'VK_RCONTROL' : 57373,
+			#'VK_PAUSE'    : 57629,
 			'VK_RMENU'    : 57400,
 			#'VK_DBE_NOCODEINPUT': 98, # except on KLID: 00000412 (ko)
 			#'VK_DECIMAL' not found anywhere?
@@ -1062,7 +1063,6 @@ class RDPConnection:
 			if vk in self.__vk_to_sc:
 				scancode = self.__vk_to_sc[vk]
 				is_extended = True
-				print('EXT')
 			else:
 				scancode = scancode_hint
 			return await self.send_key_scancode(scancode, is_pressed, is_extended)
@@ -1206,6 +1206,9 @@ class RDPConnection:
 					return
 				if indata.type == RDPDATATYPE.KEYSCAN:
 					indata = cast(RDP_KEYBOARD_SCANCODE, indata)
+					#right side control, altgr, and pause buttons still dont work well...
+					#if indata.keyCode in [97]:
+					#	await self.send_key_virtualkey('VK_RCONTROL', indata.is_pressed, indata.is_extended, scancode_hint=indata.keyCode)
 					if indata.vk_code is not None:
 						await self.send_key_virtualkey(indata.vk_code, indata.is_pressed, indata.is_extended, scancode_hint=indata.keyCode)
 					else:

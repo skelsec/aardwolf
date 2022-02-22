@@ -375,16 +375,12 @@ class VNCConnection:
 		try:
 			if vk is None:
 				return await self.send_key_scancode(scancode_hint, is_pressed, is_extended, modifiers=modifiers)
-			print('Got VK: %s' % vk)
-			if vk is None:
-				print('Could not map SC to VK! SC: %s' % scancode_hint)
-			if vk is not None and vk in self.__vk_to_vnckey:
+			#print('Got VK: %s' % vk)
+			if vk in self.__vk_to_vnckey:
 				keycode = self.__vk_to_vnckey[vk]
-				print('AAAAAAAA %s' % hex(keycode))
-			if keycode is None:
-				return await self.send_key_scancode(scancode_hint, is_pressed, is_extended, modifiers=modifiers)
-			else:
 				return await self.send_key_char(keycode, is_pressed)
+			else:
+				return await self.send_key_scancode(scancode_hint, is_pressed, is_extended, modifiers=modifiers)
 		except Exception as e:
 			traceback.print_exc()
 			return None, e

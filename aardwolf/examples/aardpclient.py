@@ -284,6 +284,7 @@ class RDPClientQTGUI(QMainWindow):
 		self._label_imageDisplay.setMinimumSize(1,1)
 		self._label_imageDisplay.show()
 	
+	## this is for testing!
 	#def keyevent_to_string(self, event):
 	#	keymap = {}
 	#	for key, value in vars(Qt).items():
@@ -342,8 +343,9 @@ class RDPClientQTGUI(QMainWindow):
 		if e.key() in self.__extended_rdp_keys.keys():
 			ki.vk_code = self.__extended_rdp_keys[e.key()]
 
-		print('SCANCODE: %s' % ki.keyCode)
-		print('VK CODE : %s' % ki.vk_code)
+		#print('SCANCODE: %s' % ki.keyCode)
+		#print('VK CODE : %s' % ki.vk_code)
+		#print('TEXT    : %s' % repr(e.text()))
 		self.in_q.put(ki)
 
 	def send_mouse(self, e, is_pressed, is_hover = False):
