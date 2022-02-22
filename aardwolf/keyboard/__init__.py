@@ -11,6 +11,7 @@ class VK_MODIFIERS(enum.IntFlag):
     VK_OEM_8 = 16
     VK_KANA = 32
     VK_NUMLOCK = 64
+    VK_WIN = 128
 
 class KeyboardLayout:
     def __init__(self):

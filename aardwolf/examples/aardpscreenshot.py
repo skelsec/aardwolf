@@ -9,9 +9,7 @@ from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.examples.scancommons.targetgens import *
 from aardwolf.examples.scancommons.internal import *
 from aardwolf.examples.scancommons.utils import *
-from aardwolf.commons.queuedata import RDPDATATYPE
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
-from PIL import Image
 from tqdm import tqdm
 
 class EnumResultFinal:
@@ -293,7 +291,7 @@ async def amain():
 	iosettings.video_height = height
 	iosettings.video_bpp_min = 15 #servers dont support 8 any more :/
 	iosettings.video_bpp_max = 32
-	iosettings.video_out_format = VIDEO_FORMAT.QT5
+	iosettings.video_out_format = VIDEO_FORMAT.PNG #PIL produces incorrect picture for some reason?! TODO: check bug
 	iosettings.clipboard_use_pyperclip = False
 
 	enumerator = RDPScreenGrabberScanner(

@@ -10,6 +10,7 @@ import asn1tools
 from PIL import Image
 from aardwolf import logger
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
+from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.commons.target import RDPTarget
 from aardwolf.network.selector import NetworkSelector
 from aardwolf.commons.credential import RDPCredentialsSecretType
@@ -1056,7 +1057,7 @@ class RDPConnection:
 		finally:
 			await self.terminate()
 
-	async def send_key_virtualkey(self, vk, is_pressed, is_extended, scancode_hint = None):
+	async def send_key_virtualkey(self, vk, is_pressed, is_extended, scancode_hint = None, modifiers = VK_MODIFIERS(0)):
 		try:
 			if vk in self.__vk_to_sc:
 				scancode = self.__vk_to_sc[vk]
@@ -1069,7 +1070,7 @@ class RDPConnection:
 			traceback.print_exc()
 			return None, e
 	
-	async def send_key_scancode(self, scancode, is_pressed, is_extended):
+	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
 		try:
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA

@@ -6,6 +6,7 @@ import threading
 import time
 
 from aardwolf import logger
+from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.commons.url import RDPConnectionURL
 from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.commons.queuedata import RDPDATATYPE
@@ -232,6 +233,9 @@ class RDPClientQTGUI(QMainWindow):
 			Qt.Key_Pause : 'VK_PAUSE',
 			Qt.Key_Slash: 'VK_DIVIDE',
 			Qt.Key_Period: 'VK_DECIMAL',
+
+			#Qt.Key_Shift: 'VK_LSHIFT',
+			#Qt.Key_Tab: 'VK_TAB',
 			#Qt.Key_0 : 'VK_NUMPAD0',
 			#Qt.Key_1 : 'VK_NUMPAD1',
 			#Qt.Key_2 : 'VK_NUMPAD2',
@@ -279,11 +283,34 @@ class RDPClientQTGUI(QMainWindow):
 		self._label_imageDisplay.setScaledContents(True)
 		self._label_imageDisplay.setMinimumSize(1,1)
 		self._label_imageDisplay.show()
+	
+	#def keyevent_to_string(self, event):
+	#	keymap = {}
+	#	for key, value in vars(Qt).items():
+	#		if isinstance(value, Qt.Key):
+	#			keymap[value] = key.partition('_')[2]
+	#	modmap = {
+	#		Qt.ControlModifier: keymap[Qt.Key_Control],
+	#		Qt.AltModifier: keymap[Qt.Key_Alt],
+	#		Qt.ShiftModifier: keymap[Qt.Key_Shift],
+	#		Qt.MetaModifier: keymap[Qt.Key_Meta],
+	#		Qt.GroupSwitchModifier: keymap[Qt.Key_AltGr],
+	#		Qt.KeypadModifier: keymap[Qt.Key_NumLock],
+	#		}
+	#	sequence = []
+	#	for modifier, text in modmap.items():
+	#		if event.modifiers() & modifier:
+	#			sequence.append(text)
+	#	key = keymap.get(event.key(), event.text())
+	#	if key not in sequence:
+	#		sequence.append(key)
+	#	return '+'.join(sequence)
 
 	def send_key(self, e, is_pressed):
 		# https://doc.qt.io/qt-5/qt.html#Key-enum
 		if self.keyboard is False:
 			return
+		#print(self.keyevent_to_string(e))
 
 		if e.key()==(Qt.Key_Control and Qt.Key_V):
 			ki = RDP_CLIPBOARD_DATA_TXT()
@@ -291,18 +318,18 @@ class RDPClientQTGUI(QMainWindow):
 			ki.data = pyperclip.paste()
 			self.in_q.put(ki)
 		
-		modifiers = []
+		modifiers = VK_MODIFIERS(0)
 		qt_modifiers = QApplication.keyboardModifiers()
-		if bool(qt_modifiers & Qt.ShiftModifier):
-			modifiers.append('SHIFT')
-		if bool(qt_modifiers & Qt.ControlModifier):
-			modifiers.append('CONTROL')
-		if bool(qt_modifiers & Qt.AltModifier):
-			modifiers.append('ALT')
-		if bool(qt_modifiers & Qt.KeypadModifier):
-			modifiers.append('KEYPAD')
-		if bool(qt_modifiers & Qt.MetaModifier):
-			modifiers.append('GUI')
+		if bool(qt_modifiers & Qt.ShiftModifier) is True and e.key() != Qt.Key_Shift:
+			modifiers |= VK_MODIFIERS.VK_SHIFT
+		if bool(qt_modifiers & Qt.ControlModifier) is True and e.key() != Qt.Key_Control:
+			modifiers |= VK_MODIFIERS.VK_CONTROL
+		if bool(qt_modifiers & Qt.AltModifier) is True and e.key() != Qt.Key_Alt:
+			modifiers |= VK_MODIFIERS.VK_MENU
+		if bool(qt_modifiers & Qt.KeypadModifier) is True and e.key() != Qt.Key_NumLock:
+			modifiers |= VK_MODIFIERS.VK_NUMLOCK
+		if bool(qt_modifiers & Qt.MetaModifier) is True and e.key() != Qt.Key_Meta:
+			modifiers |= VK_MODIFIERS.VK_WIN
 
 		ki = RDP_KEYBOARD_SCANCODE()
 		ki.keyCode = e.nativeScanCode()
@@ -380,7 +407,7 @@ def main():
 	iosettings.video_height = height
 	iosettings.video_bpp_min = 15 #servers dont support 8 any more :/
 	iosettings.video_bpp_max = args.bpp
-	iosettings.video_out_format = VIDEO_FORMAT.PIL
+	iosettings.video_out_format = VIDEO_FORMAT.QT5
 	iosettings.ducky_file = args.ducky
 	
 	settings = RDPClientConsoleSettings(args.url, iosettings)

@@ -1,6 +1,7 @@
 import enum
 from typing import List
 from aardwolf.commons.queuedata import RDPDATATYPE
+from aardwolf.keyboard import VK_MODIFIERS
 
 class RDP_KEYBOARD_SCANCODE:
 	def __init__(self):
@@ -8,7 +9,7 @@ class RDP_KEYBOARD_SCANCODE:
 		self.keyCode:int = None
 		self.is_pressed:bool = True
 		self.is_extended:bool = False
-		self.modifiers:List[str] = []
+		self.modifiers:VK_MODIFIERS = VK_MODIFIERS(0)
 		self.vk_code:str = None
 
 class RDP_KEYBOARD_UNICODE:

@@ -371,49 +371,44 @@ class VNCConnection:
 		except Exception as e:
 			return None, e
 	
-	async def send_key_virtualkey(self, vk:str, is_pressed:bool, is_extended:bool, scancode_hint:int = None):
+	async def send_key_virtualkey(self, vk:str, is_pressed:bool, is_extended:bool, scancode_hint:int = None, modifiers = VK_MODIFIERS(0)):
 		try:
-			if indata.vk_code is not None:
-				vk_code = indata.vk_code
-			else:
-				vk_code = self.__keyboard_layout.scancode_to_vk(indata.keyCode)
-			print('Got VK: %s' % vk_code)
-			if vk_code is None:
-				print('Could not map SC to VK! SC: %s' % indata.keyCode)
-			if vk_code is not None and vk_code in self.__vk_to_vnckey:
-				keycode = self.__vk_to_vnckey[vk_code]
+			if vk is None:
+				return await self.send_key_scancode(scancode_hint, is_pressed, is_extended, modifiers=modifiers)
+			print('Got VK: %s' % vk)
+			if vk is None:
+				print('Could not map SC to VK! SC: %s' % scancode_hint)
+			if vk is not None and vk in self.__vk_to_vnckey:
+				keycode = self.__vk_to_vnckey[vk]
 				print('AAAAAAAA %s' % hex(keycode))
-
-
-			if vk in self.__vk_to_sc:
-				scancode = self.__vk_to_sc[vk]
-				is_extended = True
-				print('EXT')
+			if keycode is None:
+				return await self.send_key_scancode(scancode_hint, is_pressed, is_extended, modifiers=modifiers)
 			else:
-				scancode = scancode_hint
-			return await self.send_key_char(scancode, is_pressed, is_extended)
+				return await self.send_key_char(keycode, is_pressed)
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
 
-	async def send_key_scancode(self, scancode, is_pressed, is_extended):
+	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
 		try:
-			keycode = self.__keyboard_layout.scancode_to_char(indata.keyCode, modifiers)
-			print(keycode)
+			keycode = None
+			if modifiers == VK_MODIFIERS(0):
+				vk = self.__keyboard_layout.scancode_to_vk(scancode)
+				if vk is not None and vk in self.__vk_to_vnckey:
+					keycode = self.__vk_to_vnckey[vk]
 			if keycode is None:
-				print('Failed to resolv key! SC: %s VK: %s' % (indata.keyCode, vk_code))
-				#continue
-			elif keycode is not None and len(keycode) == 1:
-				keycode = ord(keycode)
-				print('Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
-			elif keycode is not None and len(keycode) > 1:
-				print('LARGE! Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
-				#continue
-			else:
-				print('This key is too special! Can\'t resolve it! SC: %s VK: %s' % (indata.keyCode, vk_code))
-				#continue
+				keycode = self.__keyboard_layout.scancode_to_char(scancode, modifiers)
+				if keycode is None:
+					raise Exception('Failed to resolv key! SC: %s MOD: %s' % (scancode, modifiers))
 
-			return True, None
+				elif keycode is not None and len(keycode) == 1:
+					keycode = ord(keycode)
+				elif keycode is not None and len(keycode) > 1:
+					raise Exception('LARGE! Keycode %s resolved to: %s' % (scancode , repr(keycode)))
+				else:
+					raise Exception('This key is too special! Can\'t resolve it! SC: %s' % scancode)
+
+			return await self.send_key_char(keycode, is_pressed)
 		except Exception as e:
 			traceback.print_exc()
 			return None, e
@@ -432,27 +427,27 @@ class VNCConnection:
 			if xPos < 0 or yPos < 0:
 				return True, None
 
-			button =0
+			buttoncode = 0
 			if button == MOUSEBUTTON.MOUSEBUTTON_LEFT:
-				button = 1
+				buttoncode = 1
 			elif button == MOUSEBUTTON.MOUSEBUTTON_MIDDLE:
-				button = 2
+				buttoncode = 2
 			elif button == MOUSEBUTTON.MOUSEBUTTON_RIGHT:
-				button = 3
+				buttoncode = 3
 			
 			buttonmask = 0
 			if is_pressed is True:
-				if button == 1: buttonmask &= ~1
-				if button == 2: buttonmask &= ~2
-				if button == 3: buttonmask &= ~4
-				if button == 4: buttonmask &= ~8
-				if button == 5: buttonmask &= ~16
+				if buttoncode == 1: buttonmask &= ~1
+				if buttoncode == 2: buttonmask &= ~2
+				if buttoncode == 3: buttonmask &= ~4
+				if buttoncode == 4: buttonmask &= ~8
+				if buttoncode == 5: buttonmask &= ~16
 			else:
-				if button == 1: buttonmask |= 1
-				if button == 2: buttonmask |= 2
-				if button == 3: buttonmask |= 4
-				if button == 4: buttonmask |= 8
-				if button == 5: buttonmask |= 16
+				if buttoncode == 1: buttonmask |= 1
+				if buttoncode == 2: buttonmask |= 2
+				if buttoncode == 3: buttonmask |= 4
+				if buttoncode == 4: buttonmask |= 8
+				if buttoncode == 5: buttonmask |= 16
 			
 			msg = pack("!BBHH", 5, buttonmask, xPos, yPos)
 			self.__writer.write(msg)
@@ -493,62 +488,61 @@ class VNCConnection:
 					return
 				if indata.type == RDPDATATYPE.KEYSCAN:
 					indata = cast(RDP_KEYBOARD_SCANCODE, indata)
-					modifiers = VK_MODIFIERS(0)
-					for mod in indata.modifiers:
-						if mod == 'KEYPAD':
-							modifiers |= VK_MODIFIERS.VK_NUMLOCK
-						elif mod == 'SHIFT':
-							modifiers |= VK_MODIFIERS.VK_SHIFT
-						elif mod == 'CONTROL':
-							modifiers |= VK_MODIFIERS.VK_CONTROL
-						elif mod == 'ALT':
-							modifiers |= VK_MODIFIERS.VK_MENU
-
-					## emulating keys...
-					keycode = None
-					try:
-						if indata.keyCode is None and indata.vk_code is None:
-							print('No keycode found! ')
-							continue
-
-						if indata.vk_code is not None:
-							vk_code = indata.vk_code
-						else:
-							vk_code = self.__keyboard_layout.scancode_to_vk(indata.keyCode)
-						print('Got VK: %s' % vk_code)
-						if vk_code is None:
-							print('Could not map SC to VK! SC: %s' % indata.keyCode)
-						if vk_code is not None and vk_code in self.__vk_to_vnckey:
-							keycode = self.__vk_to_vnckey[vk_code]
-							print('AAAAAAAA %s' % hex(keycode))
-
-						if keycode is None:
-							keycode = self.__keyboard_layout.scancode_to_char(indata.keyCode, modifiers)
-							print(keycode)
-							if keycode is None:
-								print('Failed to resolv key! SC: %s VK: %s' % (indata.keyCode, vk_code))
-								continue
-							elif keycode is not None and len(keycode) == 1:
-								keycode = ord(keycode)
-								print('Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
-							elif keycode is not None and len(keycode) > 1:
-								print('LARGE! Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
-								continue
-							else:
-								print('This key is too special! Can\'t resolve it! SC: %s VK: %s' % (indata.keyCode, vk_code))
-								continue
-						
-					except Exception as e:
-						traceback.print_exc()
-						continue
+					if indata.vk_code is not None:
+						await self.send_key_virtualkey(indata.vk_code, indata.is_pressed, indata.is_extended, scancode_hint=indata.keyCode, modifiers=indata.modifiers)
+					else:
+						await self.send_key_scancode(indata.keyCode, indata.is_pressed, indata.is_extended, modifiers=indata.modifiers)
 					
-					if indata.keyCode is not None:
-						print('Original kk  : %s [%s]' % (indata.keyCode, hex(indata.keyCode)))
-					print('Final keycode: %s' % hex(keycode))
-					print('Is pressed   : %s' % indata.is_pressed)
-					if keycode is not None:
-						msg = pack("!BBxxI", 4, int(indata.is_pressed), keycode)
-						self.__writer.write(msg)
+					
+					
+					
+					#modifiers = indata.modifiers
+					#
+					### emulating keys...
+					#keycode = None
+					#try:
+					#	if indata.keyCode is None and indata.vk_code is None:
+					#		print('No keycode found! ')
+					#		continue
+					#
+					#	if indata.vk_code is not None:
+					#		vk_code = indata.vk_code
+					#	else:
+					#		vk_code = self.__keyboard_layout.scancode_to_vk(indata.keyCode)
+					#	print('Got VK: %s' % vk_code)
+					#	if vk_code is None:
+					#		print('Could not map SC to VK! SC: %s' % indata.keyCode)
+					#	if vk_code is not None and vk_code in self.__vk_to_vnckey:
+					#		keycode = self.__vk_to_vnckey[vk_code]
+					#		print('AAAAAAAA %s' % hex(keycode))
+					#
+					#	if keycode is None:
+					#		keycode = self.__keyboard_layout.scancode_to_char(indata.keyCode, modifiers)
+					#		print(keycode)
+					#		if keycode is None:
+					#			print('Failed to resolv key! SC: %s VK: %s' % (indata.keyCode, vk_code))
+					#			continue
+					#		elif keycode is not None and len(keycode) == 1:
+					#			keycode = ord(keycode)
+					#			print('Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
+					#		elif keycode is not None and len(keycode) > 1:
+					#			print('LARGE! Keycode %s resolved to: %s' % (indata.keyCode , repr(keycode)))
+					#			continue
+					#		else:
+					#			print('This key is too special! Can\'t resolve it! SC: %s VK: %s' % (indata.keyCode, vk_code))
+					#			continue
+					#	
+					#except Exception as e:
+					#	traceback.print_exc()
+					#	continue
+					#
+					#if indata.keyCode is not None:
+					#	print('Original kk  : %s [%s]' % (indata.keyCode, hex(indata.keyCode)))
+					#print('Final keycode: %s' % hex(keycode))
+					#print('Is pressed   : %s' % indata.is_pressed)
+					#if keycode is not None:
+					#	msg = pack("!BBxxI", 4, int(indata.is_pressed), keycode)
+					#	self.__writer.write(msg)
 				
 				elif indata.type == RDPDATATYPE.KEYUNICODE:
 					indata = cast(RDP_KEYBOARD_UNICODE, indata)
