@@ -40,6 +40,7 @@ Mod author: Tamas Jos @skelsec
 /* Specific rename for RDPY integration */
 #define uint8	unsigned char
 #define uint16	unsigned short
+#define uint	unsigned int
 #define unimpl(str, code)
 
 #define	 RD_BOOL	int
@@ -982,7 +983,7 @@ decode_rre(uint8 *rre_buff, int rre_buff_size, uint8 *dst, int dst_size, uint by
 	uint rectangle_pixel_count = width*height;
 	uint rectangle_size = rectangle_pixel_count*bypp;
 	uint subrectangle_pixel_count, subrect_color_offset, subwidth_bytes = 0;
-	ushort subx, suby, subwidth, subheight, substart = 0;
+	uint16 subx, suby, subwidth, subheight, substart = 0;
 
 	if(rectangle_size > dst_size){
 		return 1;

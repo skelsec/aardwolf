@@ -7,7 +7,10 @@ class TCPStream:
 		# tcpsocket must be running at this point
 		in_queue = tcpsocket.in_queue
 		out_queue = tcpsocket.out_queue
-		closed_event = tcpsocket.disconnected
+		closed_event = asyncio.Event()
+		if hasattr(tcpsocket, 'disconnected'):
+			closed_event = tcpsocket.disconnected
+
 			
 		writer = TCPStreamWriter(out_queue, closed_event)
 		reader = TCPStreamReader(in_queue, closed_event)

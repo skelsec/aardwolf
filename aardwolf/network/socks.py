@@ -22,6 +22,7 @@ class SocksProxyConnection:
 
 		self.out_queue = None#asyncio.Queue()
 		self.in_queue = None#asyncio.Queue()
+		self.disconnected = None #asyncio.Event()
 
 		self.proxy_in_queue = None#asyncio.Queue()
 		self.is_plain_msg = True
@@ -74,7 +75,7 @@ class SocksProxyConnection:
 		try:
 			self.out_queue = asyncio.Queue()
 			self.in_queue = asyncio.Queue()
-
+			self.disconnected = asyncio.Event()
 			self.proxy_in_queue = asyncio.Queue()
 			comms = SocksQueueComms(self.out_queue, self.proxy_in_queue)
 
