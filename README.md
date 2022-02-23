@@ -21,6 +21,7 @@ Come hang out on Discord!
  - PtH via CredSSP+Restricted admin mode
  - Scriptable Keyboard, Mouse input and Clipboard input/output
  - Can run in headless mode, no GUI required (read: no need for Qt)
+ - Support for Duckyscript files to emulate keystrokes 
 
 # Example scripts
  - `aardpclient` Basic RDP client running on top of Qt5. Can copy-paste text, handles keyboard and mouse.  
@@ -35,6 +36,8 @@ As usual the scripts take the target/scredentials in URL format. Below some exam
  CredSSP (aka `HYBRID`) auth using NTLM auth + password connecting to RDP server `10.10.10.103`
  - `rdp+ntlm-password://TEST\Administrator:<NThash>@10.10.10.103`  
  CredSSP (aka `HYBRID`) auth using Pass-the-Hash (NTLM) auth connecting to RDP server `10.10.10.103`
+ - `rdp+plain-password://Administrator:Passw0rd!1@10.10.10.103`  
+ Plain authentication (No SSL, encryption is RC4) auth using password connecting to RDP server `10.10.10.103`
 
 # Kudos
  - Citronneur's `rdpy`. The decompression code and the QT image magic was really valuable.
