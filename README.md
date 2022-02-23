@@ -36,8 +36,14 @@ As usual the scripts take the target/scredentials in URL format. Below some exam
  CredSSP (aka `HYBRID`) auth using NTLM auth + password connecting to RDP server `10.10.10.103`
  - `rdp+ntlm-password://TEST\Administrator:<NThash>@10.10.10.103`  
  CredSSP (aka `HYBRID`) auth using Pass-the-Hash (NTLM) auth connecting to RDP server `10.10.10.103`
- - `rdp+plain-password://Administrator:Passw0rd!1@10.10.10.103`  
- Plain authentication (No SSL, encryption is RC4) auth using password connecting to RDP server `10.10.10.103`
+ - `rdp+plain://Administrator:Passw0rd!1@10.10.10.103`  
+ Plain authentication (No SSL, encryption is RC4) using password connecting to RDP server `10.10.10.103`
+ - `vnc+plain://Passw0rd!1@10.10.10.103`  
+ VNC client with VNC authentication using password connecting to RDP server `10.10.10.103`
+ - `vnc+plain://Passw0rd!1@10.10.10.103`  
+ VNC client with VNC authentication using password connecting to RDP server `10.10.10.103`
+ - `vnc+plain://:admin:aaa@10.10.10.103`  
+ VNC client with VNC authentication using password `admin:aa` connecting to RDP server `10.10.10.103`. Note that if the password contains `:` char you will have to prepend the password with `:`
 
 # Kudos
  - Citronneur's `rdpy`. The decompression code and the QT image magic was really valuable.
