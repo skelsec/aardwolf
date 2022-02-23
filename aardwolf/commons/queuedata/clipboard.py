@@ -3,18 +3,35 @@ from aardwolf.commons.queuedata import RDPDATATYPE
 
 
 class RDP_CLIPBOARD_READY:
+	"""
+	This object will be dispatched on the external queue 
+	when the server is ready to recieve/send clipboard commands
+	"""
 	def __init__(self):
 		self.type = RDPDATATYPE.CLIPBOARD_READY
 
 class RDP_CLIPBOARD_CONSUMED:
+	"""
+	This object will be dispatched on the external queue 
+	when the client-side clipboard data has been consumed by the server
+	"""
 	def __init__(self):
 		self.type = RDPDATATYPE.CLIPBOARD_CONSUMED
 	
 class RDP_CLIPBOARD_NEW_DATA_AVAILABLE:
+	"""
+	This object will be dispatched on the external queue 
+	when there is new clipboard data available on the server.
+	NOTE: this will not hold the data!
+	"""
 	def __init__(self):
 		self.type = RDPDATATYPE.CLIPBOARD_NEW_DATA_AVAILABLE
 	
 class RDP_CLIPBOARD_DATA_TXT:
+	"""
+	This object will be dispatched on the external queue 
+	when the new clipboard data has arrived from the server to our client
+	"""
 	def __init__(self):
 		self.type = RDPDATATYPE.CLIPBOARD_DATA_TXT
 		self.data = None

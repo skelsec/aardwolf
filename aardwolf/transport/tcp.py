@@ -23,6 +23,16 @@ class TCPSocket:
 
 		self.incoming_task = None
 		self.outgoing_task = None
+		self.disconnect_monitor_task = None
+
+
+	async def disconnect_monitor(self):
+		await self.disconnected.wait()
+		if self.incoming_task is not None:
+			self.incoming_task.cancel()
+		await self.disconnect()
+		
+
 		
 	async def disconnect(self):
 		"""
@@ -51,9 +61,10 @@ class TCPSocket:
 		"""
 		try:
 			lasterror = None
-			while not self.disconnected.is_set():	
+			while not self.disconnected.is_set():
 				try:
-					data = await self.reader.read(16384)
+					await asyncio.sleep(0)
+					data = await self.reader.read(1073741824)
 					#print('TCP <- %s' % data.hex())
 					await self.in_queue.put( (data, None) )
 					if data == b'':
@@ -88,7 +99,7 @@ class TCPSocket:
 			while not self.disconnected.is_set():
 				data = await self.out_queue.get()
 				if data == b'':
-					await self.disconnect()
+					return
 				#print('TCP -> %s' % data.hex())
 				self.writer.write(data)
 				await self.writer.drain()
@@ -111,13 +122,6 @@ class TCPSocket:
 			
 			try:
 				self.reader, self.writer = await asyncio.wait_for(con, int(self.settings.timeout))
-				#sock = self.writer.transport.get_extra_info('socket')
-				#if sock is not None:
-				#	sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-				#	sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)
-				#	sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3)
-				#	sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)
-
 			except asyncio.TimeoutError:
 				logging.debug('[TCPSocket] Connection timeout')
 				raise Exception('[TCPSocket] Connection timeout')
@@ -136,6 +140,7 @@ class TCPSocket:
 			
 			self.incoming_task = asyncio.create_task(self.handle_incoming())
 			self.outgoing_task = asyncio.create_task(self.handle_outgoing())
+			self.disconnect_monitor_task = asyncio.create_task(self.disconnect_monitor())
 
 
 			return True, None

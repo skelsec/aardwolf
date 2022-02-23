@@ -123,7 +123,7 @@ async def main():
 	iosettings.video_height = height
 	iosettings.video_bpp_min = 15 #servers dont support 8 any more :/
 	iosettings.video_bpp_max = args.bpp
-	iosettings.video_out_format = 'png'
+	iosettings.video_out_format = VIDEO_FORMAT.PNG
 	
 	settings = RDPClientConsoleSettings(args.url, iosettings)
 	settings.mhover = args.no_mouse_hover

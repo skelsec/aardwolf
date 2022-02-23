@@ -9,8 +9,7 @@ from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.examples.scancommons.targetgens import *
 from aardwolf.examples.scancommons.internal import *
 from aardwolf.examples.scancommons.utils import *
-from aardwolf.commons.queuedata import RDPDATATYPE
-from PIL import Image
+from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from tqdm import tqdm
 
 class EnumResultFinal:
@@ -61,34 +60,23 @@ class RDPScreenGrabberScanner:
 		self.__total_errors = 0
 
 	async def __executor(self, tid, target):
-		async def get_image(buffer:Image, ext_out_queue):
-			try:
-				while True:
-					data = await ext_out_queue.get()
-					if data is None:
-						return None, None
-					if data.type == RDPDATATYPE.VIDEO:
-						buffer.paste(data.data, (data.x, data.y))
-				
-				return None, None
-
-			except Exception as e:
-				print(e)
-				return None, e
-			
 		connection = None
 		try:
-			async with self.rdp_mgr.create_connection_newtarget(target, self.iosettings) as connection:
-				_, err = await connection.connect()
-				if err is not None:
-					raise err
-				
-				buffer = Image.new('RGBA', (self.iosettings.video_width, self.iosettings.video_height))
+			connection = self.rdp_mgr.create_connection_newtarget(target, self.iosettings)
+			_, err = await connection.connect()
+			if err is not None:
+				raise err
+			
+			await asyncio.sleep(self.screentime)
 
-				try:
-					await asyncio.wait_for(get_image(buffer, connection.ext_out_queue), self.screentime)
-				except Exception as e:
-					pass
+		except asyncio.CancelledError:
+			return
+		except Exception as e:
+			traceback.print_exc()
+			await self.res_q.put(EnumResult(tid, target, None, error = e, status = EnumResultStatus.ERROR))
+		finally:
+			if connection is not None and connection.desktop_buffer_has_data is True:
+				buffer = connection.get_desktop_buffer(VIDEO_FORMAT.PIL)
 				
 				if self.ext_result_q is None:
 					filename = 'screen_%s_%s.png' % (target, tid)
@@ -97,12 +85,6 @@ class RDPScreenGrabberScanner:
 				else:
 					await self.res_q.put(EnumResult(tid, target, buffer, status = EnumResultStatus.RESULT))
 
-		except asyncio.CancelledError:
-			return
-		except Exception as e:
-			#traceback.print_exc()
-			await self.res_q.put(EnumResult(tid, target, None, error = e, status = EnumResultStatus.ERROR))
-		finally:
 			await self.res_q.put(EnumResult(tid, target, None, status = EnumResultStatus.FINISHED))
 			
 
@@ -276,13 +258,14 @@ async def amain():
 	import argparse
 	import sys
 
-	parser = argparse.ArgumentParser(description='RDP Screen grabber', formatter_class=argparse.RawDescriptionHelpFormatter)
+	parser = argparse.ArgumentParser(description='RDP/VNC Screen grabber', formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument('-v', '--verbose', action='count', default=0)
 	parser.add_argument('--screentime', type=int, default=5, help='Time to wait for desktop image')
 	parser.add_argument('-w', '--worker-count', type=int, default=50, help='Parallell count')
 	parser.add_argument('-o', '--out-dir', help='Output directory path.')
 	parser.add_argument('--progress', action='store_true', help='Show progress bar')
 	parser.add_argument('-s', '--stdin', action='store_true', help='Read targets from stdin')
+	parser.add_argument('--res', default = '1024x768', help='Resolution in "WIDTHxHEIGHT" format. Default: "1024x768"')
 	parser.add_argument('url', help='Connection URL base, target can be set to anything. Example: "rdp+ntlm-password://TEST\\victim:Password!1@10.10.10.2"')
 	parser.add_argument('targets', nargs='*', help = 'Hostname or IP address or file with a list of targets')
 
@@ -298,10 +281,18 @@ async def amain():
 		logging.basicConfig(level=logging.DEBUG)
 
 	rdp_url = args.url
+	width, height = args.res.upper().split('X')
+	height = int(height)
+	width = int(width)
 
 	iosettings = RDPIOSettings()
 	iosettings.channels = []
-	iosettings.video_out_format = 'pil'
+	iosettings.video_width = width
+	iosettings.video_height = height
+	iosettings.video_bpp_min = 15 #servers dont support 8 any more :/
+	iosettings.video_bpp_max = 32
+	iosettings.video_out_format = VIDEO_FORMAT.PNG #PIL produces incorrect picture for some reason?! TODO: check bug
+	iosettings.clipboard_use_pyperclip = False
 
 	enumerator = RDPScreenGrabberScanner(
 		rdp_url,
