@@ -1,2 +1,0 @@
-REM CONTROL-shift F1
-GUI r
