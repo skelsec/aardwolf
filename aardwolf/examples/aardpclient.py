@@ -10,11 +10,12 @@ from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.commons.url import RDPConnectionURL
 from aardwolf.commons.iosettings import RDPIOSettings
 from aardwolf.commons.queuedata import RDPDATATYPE
-from aardwolf.commons.queuedata.keyboard import RDP_KEYBOARD_SCANCODE
+from aardwolf.commons.queuedata.keyboard import RDP_KEYBOARD_SCANCODE, RDP_KEYBOARD_UNICODE
 from aardwolf.commons.queuedata.mouse import RDP_MOUSE
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT
 from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA_TXT
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
+from aardwolf.commons.target import RDPConnectionDialect
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, qApp, QLabel
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThread, Qt
@@ -47,7 +48,7 @@ class RDPInterfaceThread(QObject):
 	
 	def __init__(self, parent=None, **kwargs):
 		super().__init__(parent, **kwargs)
-		self.settings = None
+		self.settings:RDPClientConsoleSettings = None
 		self.conn = None
 		self.input_evt = None
 		self.in_q = None
@@ -71,26 +72,32 @@ class RDPInterfaceThread(QObject):
 	async def ducky_keyboard_sender(self, scancode, is_pressed, as_char = False):
 		### Callback function for the duckyexecutor to dispatch scancodes/characters to the remote end
 		try:
-			print('SCANCODE: %s' % scancode)
-			print('is_pressed: %s' % is_pressed)
-			print('as_char: %s' % as_char)
+			#print('SCANCODE: %s' % scancode)
+			#print('is_pressed: %s' % is_pressed)
+			#print('as_char: %s' % as_char)
 			if as_char is False:
 				ki = RDP_KEYBOARD_SCANCODE()
 				ki.keyCode = scancode
 				ki.is_pressed = is_pressed
-				ki.modifiers = []
+				ki.modifiers = VK_MODIFIERS(0)
 				await self.conn.ext_in_queue.put(ki)
-				await asyncio.sleep(0.5)
+			else:
+				ki = RDP_KEYBOARD_UNICODE()
+				ki.char = scancode
+				ki.is_pressed = is_pressed
+				await self.conn.ext_in_queue.put(ki)
 		except Exception as e:
 			traceback.print_exc()
 
 	async def ducky_exec(self):
 		try:
-			await asyncio.sleep(5)
 			from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
 			from aardwolf.utils.ducky import DuckyExecutorBase, DuckyReaderFile
+			if self.settings.iosettings.ducky_autostart_delay is not None:
+				await asyncio.sleep(self.settings.iosettings.ducky_autostart_delay)
+			
 			layout = KeyboardLayoutManager().get_layout_by_shortname('enus')
-			executor = DuckyExecutorBase(layout, self.ducky_keyboard_sender)
+			executor = DuckyExecutorBase(layout, self.ducky_keyboard_sender, send_as_char = True if self.conn.target.dialect == RDPConnectionDialect.VNC else False)
 			reader = DuckyReaderFile.from_file(self.settings.iosettings.ducky_file, executor)
 			await reader.parse()
 		except Exception as e:
@@ -185,7 +192,7 @@ class RDPClientQTGUI(QMainWindow):
 		self.is_rdp = True if settings.url.lower().startswith('rdp') is True else False
 
 		# setting up the main window with the requested resolution
-		self.setGeometry(0,0, self.settings.iosettings.video_width, self.settings.iosettings.video_height)
+		self.setGeometry(0, 0, self.settings.iosettings.video_width, self.settings.iosettings.video_height)
 		# this buffer will hold the current frame and will be contantly updated
 		# as new rectangle info comes in from the server
 		self._buffer = QImage(self.settings.iosettings.video_width, self.settings.iosettings.video_height, QImage.Format_RGB32)
@@ -411,6 +418,7 @@ def main():
 	iosettings.video_bpp_max = args.bpp
 	iosettings.video_out_format = VIDEO_FORMAT.QT5
 	iosettings.ducky_file = args.ducky
+	iosettings.ducky_autostart_delay = 5
 	
 	settings = RDPClientConsoleSettings(args.url, iosettings)
 	settings.mhover = args.no_mouse_hover

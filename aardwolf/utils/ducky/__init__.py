@@ -9,9 +9,10 @@ from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
 from aardwolf.keyboard import KeyboardLayout, VK_MODIFIERS
 
 class DuckyExecutorBase:
-	def __init__(self, keyboard_layout:KeyboardLayout, key_sender):
+	def __init__(self, keyboard_layout:KeyboardLayout, key_sender, send_as_char = False):
 		self.keyboard_layout = keyboard_layout
 		self.key_sender = key_sender
+		self.send_as_char = send_as_char
 		self.default_delay = 100
 		self.default_chardelay = 50/1000
 		self.aliases = {
@@ -113,12 +114,14 @@ class DuckyExecutorBase:
 		await asyncio.sleep(delay)
 
 	async def do_string(self, data:str):
-		print(data)
 		data = ' '.join(data)
-		for c in data:
-			await self.keydispatch(c)
-		#await asyncio.sleep(self.default_delay)
-		#print(data)
+		if self.send_as_char is True:
+			for c in data:
+				await self.key_sender(c, True, True)
+				await asyncio.sleep(self.default_chardelay)
+		else:
+			for c in data:
+				await self.keydispatch(c)
 
 	async def do_gui(self, data = []):
 		if len(data) > 0:
@@ -257,17 +260,15 @@ class DuckyExecutorBase:
 			await asyncio.sleep(self.default_chardelay)
 			await self.key_sender(code, False)
 	
-	async def keydispatch(self, key, modifiers = 0):
-		#print(self.keyboard_layout.char_to_sc)
-		#print(self.keyboard_layout.sc_to_char)
+	async def keydispatch(self, key, modifiers = VK_MODIFIERS(0)):
 		if key in '0123456789':
 			key = 'VK_%s' % key
 		if len(key) == 1:
 			try:
 				scancode, mo = self.keyboard_layout.char_to_scancode(key)
-				print('key     : %s' % key)
-				print('scancode: %s' % scancode)
-				print('mo      : %s' % mo)
+				#print('key     : %s' % key)
+				#print('scancode: %s' % scancode)
+				#print('mo      : %s' % mo)
 
 			except KeyError:
 				# this is bad...

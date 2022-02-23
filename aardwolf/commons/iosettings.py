@@ -53,3 +53,5 @@ class RDPIOSettings:
 
 		# file path of the ducky file (if used)
 		self.ducky_file = None
+		# ducky script start delay, None means that typing will not start automatically
+		self.ducky_autostart_delay = 5
