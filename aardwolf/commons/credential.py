@@ -39,6 +39,7 @@ class RDPCredentialsSecretType(enum.Enum):
 	CERTSTORE = 'CERTSTORE'
 
 class RDPAuthProtocol(enum.Enum):
+	NONE = 'NONE'
 	PLAIN = 'PLAIN'
 	NTLM = 'NTLM'
 	KERBEROS = 'KERBEROS'

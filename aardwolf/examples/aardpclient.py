@@ -89,14 +89,17 @@ class RDPInterfaceThread(QObject):
 		except Exception as e:
 			traceback.print_exc()
 
-	async def ducky_exec(self):
+	async def ducky_exec(self, bypass_delay = False):
 		try:
 			from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
 			from aardwolf.utils.ducky import DuckyExecutorBase, DuckyReaderFile
-			if self.settings.iosettings.ducky_autostart_delay is not None:
-				await asyncio.sleep(self.settings.iosettings.ducky_autostart_delay)
+			if bypass_delay is False:
+				if self.settings.iosettings.ducky_autostart_delay is not None:
+					await asyncio.sleep(self.settings.iosettings.ducky_autostart_delay)
+				else:
+					return
 			
-			layout = KeyboardLayoutManager().get_layout_by_shortname('enus')
+			layout = KeyboardLayoutManager().get_layout_by_shortname(self.settings.iosettings.client_keyboard)
 			executor = DuckyExecutorBase(layout, self.ducky_keyboard_sender, send_as_char = True if self.conn.target.dialect == RDPConnectionDialect.VNC else False)
 			reader = DuckyReaderFile.from_file(self.settings.iosettings.ducky_file, executor)
 			await reader.parse()
@@ -104,6 +107,8 @@ class RDPInterfaceThread(QObject):
 			traceback.print_exc()
 	
 	async def rdpconnection(self):
+		input_handler_thread = None
+
 		try:
 			rdpurl = RDPConnectionURL(self.settings.url)
 			self.conn = rdpurl.get_connection(self.settings.iosettings)
@@ -145,9 +150,9 @@ class RDPInterfaceThread(QObject):
 		finally:
 			if self.conn is not None:
 				await self.conn.terminate()
-			input_handler_thread.cancel()
+			if input_handler_thread is not None:
+				input_handler_thread.cancel()
 			if not self.gui_stopped_evt.is_set():
-				print(self.connection_terminated)
 				self.connection_terminated.emit()
 
 	def starter(self):
@@ -171,11 +176,19 @@ class RDPInterfaceThread(QObject):
 	@pyqtSlot()
 	def stop(self):
 		self.gui_stopped_evt.set()
-		if self.conn is not None:
-			asyncio.run_coroutine_threadsafe(self.conn.terminate(), self.loop)
+		if self.conn is not None and self.loop.is_running():
+			try:
+				asyncio.run_coroutine_threadsafe(self.conn.terminate(), self.loop)
+			except:
+				pass
 		time.sleep(0.1) # waiting connection to terminate
 		self.rdp_connection_task.cancel()
 		self.loop.stop()
+	
+	@pyqtSlot()
+	def startducky(self):
+		time.sleep(0.1) # waiting for keyboard flush
+		asyncio.run_coroutine_threadsafe(self.ducky_exec(bypass_delay = True), self.loop)
 
 
 class RDPClientQTGUI(QMainWindow):
@@ -184,6 +197,7 @@ class RDPClientQTGUI(QMainWindow):
 	def __init__(self, settings:RDPClientConsoleSettings):
 		super().__init__()
 		self.settings = settings
+		self.ducky_key_ctr = 0
 
 		# enabling this will singificantly increase the bandwith
 		self.mhover = settings.mhover
@@ -275,6 +289,7 @@ class RDPClientQTGUI(QMainWindow):
 		self.in_q.put(None)
 		self._threaded.stop()
 		self._thread.quit()
+		self.close()
 	
 	def updateImage(self, event):
 		if event.width == self.settings.iosettings.video_width and event.height == self.settings.iosettings.video_height:
@@ -316,6 +331,17 @@ class RDPClientQTGUI(QMainWindow):
 
 	def send_key(self, e, is_pressed):
 		# https://doc.qt.io/qt-5/qt.html#Key-enum
+		
+		# ducky script starter
+		if is_pressed is True:
+			if e.key()==Qt.Key_Escape:
+				self.ducky_key_ctr += 1
+				if self.ducky_key_ctr == 3:
+					self.ducky_key_ctr = 0
+					self._threaded.startducky()
+			else:
+				self.ducky_key_ctr = 0
+
 		if self.keyboard is False:
 			return
 		#print(self.keyevent_to_string(e))
@@ -390,13 +416,15 @@ class RDPClientQTGUI(QMainWindow):
 def main():
 	import logging
 	import argparse
-	parser = argparse.ArgumentParser(description='Async RDP Client')
+	parser = argparse.ArgumentParser(description='Async RDP Client. Duckyscript will be executed by pressing ESC 3 times')
 	parser.add_argument('-v', '--verbose', action='count', default=0, help='Verbosity, can be stacked')
 	parser.add_argument('--no-mouse-hover', action='store_false', help='Disables sending mouse hovering data. (saves bandwith)')
 	parser.add_argument('--no-keyboard', action='store_false', help='Disables keyboard input. (whatever)')
 	parser.add_argument('--res', default = '1024x768', help='Resolution in "WIDTHxHEIGHT" format. Default: "1024x768"')
 	parser.add_argument('--bpp', choices = [15, 16, 24, 32], default = 32, type=int, help='Bits per pixel.')
+	parser.add_argument('--keyboard', default = 'enus', help='Keyboard on the client side. Used for VNC and duckyscript')
 	parser.add_argument('--ducky', help='Ducky script to be executed')
+	parser.add_argument('--duckydelay', type=int, default=-1, help='Ducky script autostart delayed')
 	parser.add_argument('url', help="RDP connection url")
 
 	args = parser.parse_args()
@@ -408,6 +436,10 @@ def main():
 	elif args.verbose > 2:
 		logger.setLevel(1)
 
+	duckydelay = args.duckydelay
+	if args.duckydelay == -1:
+		duckydelay = None
+
 	width, height = args.res.upper().split('X')
 	height = int(height)
 	width = int(width)
@@ -417,8 +449,10 @@ def main():
 	iosettings.video_bpp_min = 15 #servers dont support 8 any more :/
 	iosettings.video_bpp_max = args.bpp
 	iosettings.video_out_format = VIDEO_FORMAT.QT5
+	iosettings.client_keyboard = args.keyboard
 	iosettings.ducky_file = args.ducky
-	iosettings.ducky_autostart_delay = 5
+	iosettings.ducky_autostart_delay = duckydelay
+
 	
 	settings = RDPClientConsoleSettings(args.url, iosettings)
 	settings.mhover = args.no_mouse_hover

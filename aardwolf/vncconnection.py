@@ -19,6 +19,8 @@ from aardwolf.transport.tcpstream import TCPStream
 from aardwolf.crypto.symmetric import DES
 from aardwolf.crypto.BASE import cipherMODE
 
+from aardwolf.commons.target import RDPTarget
+from aardwolf.commons.credential import RDPCredential, RDPAuthProtocol
 from aardwolf.commons.queuedata import *
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT
 from aardwolf.protocol.vnc.keyboard import *
@@ -49,7 +51,7 @@ TRLE_ENCODING = 15
 ZRLE_ENCODING = 16
 
 class VNCConnection:
-	def __init__(self, target, credentials, iosettings:RDPIOSettings):
+	def __init__(self, target:RDPTarget, credentials:RDPCredential, iosettings:RDPIOSettings):
 		self.target = target
 		self.credentials = credentials
 		self.authapi = None
@@ -60,7 +62,7 @@ class VNCConnection:
 		self.server_name = None
 		self.disconnected_evt = asyncio.Event() #this will be set if we disconnect for whatever reason
 		self.server_supp_security_types = []
-		self.__selected_security_type = 2
+		self.__selected_security_type = 1 if self.credentials.authentication_type == RDPAuthProtocol.NONE else 2 #currently we only support these 2
 		self.__refresh_screen_task = None
 		self.__reader_loop_task = None
 		self.__external_reader_task = None
@@ -191,6 +193,10 @@ class VNCConnection:
 	async def __aexit__(self, exc_type, exc, traceback):
 		await asyncio.wait_for(self.terminate(), timeout = 5)
 	
+	def get_extra_info(self):
+		# to have the same interface as RDP
+		return None
+	
 	async def connect(self):
 		"""
 		Performs the entire connection sequence 
@@ -221,6 +227,12 @@ class VNCConnection:
 			if err is not None:
 				raise err
 			logger.debug('Security handshake OK')
+
+			logger.debug('Authenticating')
+			_, err = await self.__authenticate()
+			if err is not None:
+				raise err
+			logger.debug('Authentication OK')
 
 			logger.debug('Setting up clipboard')
 			_, err = await self.__setup_clipboard()
@@ -284,7 +296,17 @@ class VNCConnection:
 			sec_types = await self.__reader.readexactly(no_sec_types)
 			for sectype in sec_types:
 				self.server_supp_security_types.append(sectype)
+			
+			if self.__selected_security_type not in self.server_supp_security_types:
+				raise Exception('Clound\'t find common authentication type. Client supports: %s Server supports: %s' % (self.__selected_security_type, ','.join([str(x) for x in self.server_supp_security_types])))
 
+
+			return True, None
+		except Exception as e:
+			return None, e
+
+	async def __authenticate(self):
+		try:
 			if self.__selected_security_type == 0:
 				logger.debug('Invalid authentication type!!!')
 				raise Exception('Invalid authentication type')
