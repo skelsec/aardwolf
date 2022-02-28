@@ -33,6 +33,10 @@ class RDPClientConsoleSettings:
 		self.keyboard:int = True
 		self.url:str = url
 		self.iosettings:RDPIOSettings = iosettings
+		# file path of the ducky file (if used)
+		self.ducky_file = None
+		# ducky script start delay, None means that typing will not start automatically
+		self.ducky_autostart_delay = 5
 
 class RDPImage:
 	def __init__(self,x,y,image,width,height):
@@ -91,17 +95,19 @@ class RDPInterfaceThread(QObject):
 
 	async def ducky_exec(self, bypass_delay = False):
 		try:
+			if self.settings.ducky_file is None:
+				return
 			from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
 			from aardwolf.utils.ducky import DuckyExecutorBase, DuckyReaderFile
 			if bypass_delay is False:
-				if self.settings.iosettings.ducky_autostart_delay is not None:
-					await asyncio.sleep(self.settings.iosettings.ducky_autostart_delay)
+				if self.settings.ducky_autostart_delay is not None:
+					await asyncio.sleep(self.settings.ducky_autostart_delay)
 				else:
 					return
 			
 			layout = KeyboardLayoutManager().get_layout_by_shortname(self.settings.iosettings.client_keyboard)
 			executor = DuckyExecutorBase(layout, self.ducky_keyboard_sender, send_as_char = True if self.conn.target.dialect == RDPConnectionDialect.VNC else False)
-			reader = DuckyReaderFile.from_file(self.settings.iosettings.ducky_file, executor)
+			reader = DuckyReaderFile.from_file(self.settings.ducky_file, executor)
 			await reader.parse()
 		except Exception as e:
 			traceback.print_exc()
@@ -119,7 +125,7 @@ class RDPInterfaceThread(QObject):
 			#asyncio.create_task(self.inputhandler())
 			input_handler_thread = asyncio.get_event_loop().run_in_executor(None, self.inputhandler, asyncio.get_event_loop())
 			self.loop_started_evt.set()
-			if self.settings.iosettings.ducky_file is not None:
+			if self.settings.ducky_file is not None:
 				x = asyncio.create_task(self.ducky_exec())
 			while not self.gui_stopped_evt.is_set():
 				data = await self.conn.ext_out_queue.get()
@@ -450,13 +456,13 @@ def main():
 	iosettings.video_bpp_max = args.bpp
 	iosettings.video_out_format = VIDEO_FORMAT.QT5
 	iosettings.client_keyboard = args.keyboard
-	iosettings.ducky_file = args.ducky
-	iosettings.ducky_autostart_delay = duckydelay
-
 	
+
 	settings = RDPClientConsoleSettings(args.url, iosettings)
 	settings.mhover = args.no_mouse_hover
 	settings.keyboard = args.no_keyboard
+	settings.ducky_file = args.ducky
+	settings.ducky_autostart_delay = duckydelay
 
 
 	app = QApplication(sys.argv)

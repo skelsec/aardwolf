@@ -50,8 +50,4 @@ class RDPIOSettings:
 		# Each value corresponds to an encoding type and only these three anre implemented currently.
 		# The order signifies the preference to the server but the server can decide to ignore it
 		self.vnc_encodings = [2, 1, 0]
-
-		# file path of the ducky file (if used)
-		self.ducky_file = None
-		# ducky script start delay, None means that typing will not start automatically
-		self.ducky_autostart_delay = 5
+		
