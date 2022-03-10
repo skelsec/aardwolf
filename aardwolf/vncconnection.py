@@ -16,8 +16,7 @@ from typing import cast
 from aardwolf import logger
 from aardwolf.network.selector import NetworkSelector
 from aardwolf.transport.tcpstream import TCPStream
-from aardwolf.crypto.symmetric import DES
-from aardwolf.crypto.BASE import cipherMODE
+from unicrypto.symmetric import DES, MODE_ECB
 
 from aardwolf.commons.target import RDPTarget
 from aardwolf.commons.credential import RDPCredential, RDPAuthProtocol
@@ -33,7 +32,7 @@ from PIL import Image
 try:
 	from PIL.ImageQt import ImageQt
 except ImportError:
-	print('No Qt installed! Converting to qt will not work')
+	logger.debug('No Qt installed! Converting to qt will not work')
 
 import rle
 
@@ -337,7 +336,7 @@ class VNCConnection:
 						if bsrc & (1 << i):
 							btgt = btgt | (1 << 7 - i)
 					newkey+= bytes([btgt])
-				ctx = DES(newkey, mode = cipherMODE.ECB, IV = None)
+				ctx = DES(newkey, mode = MODE_ECB, IV = None)
 				response = ctx.encrypt(challenge)
 				self.__writer.write(response)
 

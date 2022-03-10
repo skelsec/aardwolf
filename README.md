@@ -3,7 +3,7 @@
 :triangular_flag_on_post: This is the public repository of aardwolf, for latest version and updates please consider supporting us through https://porchetta.industries/
 
 # AARDWOLF - Asynchronous RDP client in Python
-This project is aimed to play around the RDP protocol.
+This project is aimed to play around the RDP and VNC protocols.
 
 ## :triangular_flag_on_post: Sponsors
 
@@ -15,6 +15,9 @@ Come hang out on Discord!
 
 [![Porchetta Industries](https://discordapp.com/api/guilds/736724457258745996/widget.png?style=banner3)](https://discord.gg/ycGXUxy)
 
+# Important
+This is a headless client, for GUI functionality use the `aardwolfgui` package.
+
 # Features
  - Supports credssp auth via NTLM/Kerberos.
  - Built-in proxy client allows SOCKS/HTTP proxy tunneling without 3rd part software  
@@ -24,9 +27,9 @@ Come hang out on Discord!
  - Support for Duckyscript files to emulate keystrokes 
 
 # Example scripts
- - `aardpclient` Basic RDP client running on top of Qt5. Can copy-paste text, handles keyboard and mouse.  
  - `aardpscreenshot` RDP ?screenshotter? scans the given target/s or network ranges for open RDP clients, tries to log in either with or without credentials and takes a screemshot  
  - `aardpcapscan` RDP login capability scanner identifies the supported login protocols on a target or network ranges.  
+  - `aardploginscan` RDP login scanner.  
 
 # URL format
 As usual the scripts take the target/scredentials in URL format. Below some examples
@@ -50,7 +53,4 @@ As usual the scripts take the target/scredentials in URL format. Below some exam
  - Marc-André Moreau (@awakecoding) for providing suggestions on fixes
 
 
-# Additional info for Qt install.
- - installing in venv will require installing Qt5 outside of venv, then installing 'wheel' and 'vext.pyqt5' in the venv via pip first. then install pyqt5 in the venv
- - installing Qt5 can be a nightmare
- - generally on ubuntu you can use `apt install python3-pyqt5` before installing `aardwolf` and it will (should) work
+

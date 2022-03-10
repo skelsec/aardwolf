@@ -19,14 +19,6 @@ rle_module = Extension('rle',
 	sources = ['aardwolf/utils/rle/rle.c']
 )
 
-install_requires = []
-if platform.system().lower() == 'windows':
-	install_requires.append('pyqt5==5.12.3')
-	install_requires.append('pyqt5-sip==12.7.0')
-else:
-	install_requires.append('pyqt5')
-	install_requires.append('pyqt5-sip')
-
 setup(
 	# Application name:
 	name="aardwolf",
@@ -67,11 +59,11 @@ setup(
 		'colorama',
 		'asn1crypto',
 		'asn1tools',
-		'pycryptodomex', #optional, but recommended
 		'pyperclip>=1.8.2',
-		'arc4>=0.0.4', #fater than cryptodome
+		'arc4>=0.0.4', #faster than cryptodome
 		'Pillow>=9.0.0',
-	] + install_requires,
+		'unicrypto>=0.0.1',
+	],
 	
 	
 	classifiers=[
@@ -80,7 +72,6 @@ setup(
 	],
 	entry_points={
 		'console_scripts': [
-			'aardpclient = aardwolf.examples.aardpclient:main',
 			'aardpcapsscan = aardwolf.examples.aardpcapscan:main',
 			'aardploginscan = aardwolf.examples.aardploginscan:main',
 			'aardpscreenshot = aardwolf.examples.aardpscreenshot:main',

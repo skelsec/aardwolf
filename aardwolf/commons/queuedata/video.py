@@ -2,13 +2,14 @@ import enum
 import io
 from aardwolf.protocol.fastpath.bitmap import TS_BITMAP_FLAG, TS_BITMAP_DATA
 
+from aardwolf import logger
 from aardwolf.commons.queuedata import RDPDATATYPE
 from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from aardwolf.utils.rectconvert import rectconvert
 try:
 	from PIL.ImageQt import ImageQt
 except ImportError:
-	print('No Qt installed! Converting to qt will not work')
+	logger.debug('No Qt installed! Converting to qt will not work')
 
 class RDP_VIDEO:
 	def __init__(self):

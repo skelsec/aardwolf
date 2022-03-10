@@ -15,7 +15,9 @@ from aardwolf.authentication.ntlm.messages.negotiate import NTLMNegotiate
 from aardwolf.authentication.ntlm.messages.challenge import NTLMChallenge
 from aardwolf.authentication.ntlm.messages.authenticate import NTLMAuthenticate
 from aardwolf.authentication.ntlm.creds_calc import *
-from aardwolf.crypto.symmetric import RC4
+from unicrypto.symmetric import RC4
+from unicrypto import hashlib
+from unicrypto import hmac
 
 
 class NTLMHandlerSettings:
@@ -163,14 +165,14 @@ class NTLMAUTHHandler:
 			msg = NTLMSSP_MESSAGE_SIGNATURE()
 			if NegotiateFlags.NEGOTIATE_KEY_EXCH in self.ntlmChallenge.NegotiateFlags:
 				tt = struct.pack('<i', seqNum) + message
-				t = hmac_md5(signingKey)
+				t = hmac.new(signingKey, digestmod='md5')
 				t.update(tt)
 				
 				msg.Checksum = handle(t.digest()[:8])
 				msg.SeqNum = seqNum
 				seqNum += 1
 			else:
-				t = hmac_md5(signingKey)
+				t = hmac.new(signingKey, digestmod='md5')
 				t.update(struct.pack('<i',seqNum)+message)
 				msg.Checksum = t.digest()[:8]
 				msg.SeqNum = seqNum
