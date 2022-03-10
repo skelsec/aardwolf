@@ -2,6 +2,8 @@ import enum
 import platform
 import uuid
 
+from aardwolf.commons.target import RDPTarget
+
 
 class RDPCredentialTypes(enum.Enum):
 	NTLM_NT = 'ntlm-nt'
@@ -60,7 +62,14 @@ class RDPAuthProtocol(enum.Enum):
 	NEGOEX = 'NEGOEX'
 
 class RDPCredential:
-	def __init__(self, username = None, domain = None, secret = None, secret_type = None, authentication_type = None, settings = None, target = None):
+	def __init__(self, 
+			username:str = None, 
+			domain:str = None, 
+			secret:str = None, 
+			secret_type:RDPCredentialsSecretType = None, 
+			authentication_type:RDPAuthProtocol = None, 
+			settings = None, 
+			target:RDPTarget = None):
 		self.username = username
 		self.domain = domain
 		self.secret = secret

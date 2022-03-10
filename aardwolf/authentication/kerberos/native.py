@@ -14,7 +14,6 @@ from minikerberos.common import *
 
 from minikerberos.protocol.asn1_structs import AP_REP, EncAPRepPart, EncryptedData, AP_REQ, Ticket
 from aardwolf.authentication.kerberos.gssapi import get_gssapi, KRB5_MECH_INDEP_TOKEN
-from aardwolf.commons.proxy import RDPProxyType
 from minikerberos.protocol.structures import ChecksumFlags
 from minikerberos.protocol.encryption import Enctype, Key, _enctype_table
 from minikerberos.protocol.constants import MESSAGE_TYPE
@@ -22,15 +21,6 @@ from minikerberos.aioclient import AIOKerberosClient
 from minikerberos.network.aioclientsockssocket import AIOKerberosClientSocksSocket
 from aardwolf import logger
 
-# SMBKerberosCredential
-
-RDP_SOCKS_PROXY_TYPES = [
-	RDPProxyType.SOCKS4, 
-	RDPProxyType.SOCKS4_SSL, 
-	RDPProxyType.SOCKS5, 
-	RDPProxyType.SOCKS5_SSL,
-	RDPProxyType.WSNET,
-]
 
 class RDPKerberos:
 	def __init__(self, settings):

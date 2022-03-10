@@ -14,6 +14,8 @@ from minikerberos.common.proxy import KerberosProxy
 from minikerberos.common.creds import KerberosCredential
 from minikerberos.common.spn import KerberosSPN
 
+from aardwolf.commons.target import RDPTarget
+
 
 if platform.system().upper() == 'WINDOWS':
 	from aardwolf.authentication.kerberos.sspi import RDPKerberosSSPI
@@ -38,7 +40,7 @@ class AuthenticatorBuilder:
 
 
 	@staticmethod
-	def to_credssp(creds, target = None):
+	def to_credssp(creds:RDPCredential, target:RDPTarget = None):
 		if creds.authentication_type == RDPAuthProtocol.PLAIN:
 			ntlmcred = RDPNTLMCredential()
 			ntlmcred.username = creds.username
@@ -153,17 +155,15 @@ class AuthenticatorBuilder:
 			kcred.spn = KerberosSPN.from_target_string(target.to_target_string())
 			
 			if target.proxy is not None:
-				if target.proxy.type in [RDPProxyType.WSNET, RDPProxyType.SOCKS5, RDPProxyType.SOCKS5_SSL, RDPProxyType.SOCKS4, RDPProxyType.SOCKS4_SSL]:
+				if target.proxy.type == RDPProxyType.ASYSOCKS:
 					kcred.target = KerberosTarget(target.dc_ip)
 					kcred.target.proxy = KerberosProxy()
 					kcred.target.proxy.target = copy.deepcopy(target.proxy.target)
 					kcred.target.proxy.target[-1].endpoint_ip = target.dc_ip
 					kcred.target.proxy.target[-1].endpoint_port = 88
 				
-				elif target.proxy.type in [RDPProxyType.MULTIPLEXOR, RDPProxyType.MULTIPLEXOR_SSL]:
-					kcred.target = KerberosTarget(target.dc_ip)
-					kcred.target.proxy = copy.deepcopy(target.proxy)
-
+				else:
+					raise NotImplementedError("Proxy type '%s' not implemented!" % target.proxy.type)
 
 			else:
 				kcred.target = KerberosTarget(target.dc_ip)

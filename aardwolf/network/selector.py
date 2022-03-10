@@ -1,8 +1,7 @@
-from aardwolf.commons.proxy import RDPProxy, RDPProxyType
-from aardwolf.commons.target import RDPConnectionProtocol
+from aardwolf.commons.proxy import RDPProxyType
+from aardwolf.commons.target import RDPConnectionProtocol, RDPTarget
 from aardwolf.transport.tcp import TCPSocket
 from aardwolf.network.socks import SocksProxyConnection
-#from aardwolf.network.multiplexornetwork import MultiplexorProxyConnection
 
 
 class NetworkSelector:
@@ -10,17 +9,18 @@ class NetworkSelector:
 		pass
 
 	@staticmethod
-	async def select(target):
+	async def select(target: RDPTarget):
+		"""Selects the appropriate network connection library based on the target"""
 		try:
 			if target.proxy is None:
 				if target.protocol == RDPConnectionProtocol.TCP:
 					return TCPSocket(target = target), None
 				else:
 					raise NotImplementedError()
-			elif target.proxy.type in [RDPProxyType.WSNET,RDPProxyType.WSNETWS, RDPProxyType.WSNETWSS, RDPProxyType.SOCKS5, RDPProxyType.SOCKS5_SSL, RDPProxyType.SOCKS4, RDPProxyType.SOCKS4_SSL]:
+			elif target.proxy.type == RDPProxyType.ASYSOCKS:
 				return SocksProxyConnection(target = target), None
 
 			else:
-				return None, Exception('Cant select correct connection type!')
+				raise Exception('Cant select correct connection type!')
 		except Exception as e:
 			return None, e

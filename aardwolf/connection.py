@@ -14,7 +14,7 @@ from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.commons.target import RDPTarget
 from aardwolf.network.selector import NetworkSelector
-from aardwolf.commons.credential import RDPCredentialsSecretType
+from aardwolf.commons.credential import RDPCredential, RDPCredentialsSecretType
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
 from aardwolf.network.tpkt import TPKTNetwork
 from aardwolf.network.x224 import X224Network
@@ -51,7 +51,7 @@ from aardwolf.commons.iosettings import RDPIOSettings
 
 
 class RDPConnection:
-	def __init__(self, target:RDPTarget, credentials, iosettings:RDPIOSettings):
+	def __init__(self, target:RDPTarget, credentials:RDPCredential, iosettings:RDPIOSettings):
 		self.target = target
 		self.credentials = credentials
 		self.authapi = None

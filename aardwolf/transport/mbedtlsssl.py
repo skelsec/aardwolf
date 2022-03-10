@@ -8,6 +8,8 @@ import logging
 from asn1crypto.x509 import Certificate, PublicKeyInfo
 from mbedtls import tls
 
+# Experimental as heck! Errors don't propagate, miracle it works
+
 class MBEDTLSClientTunnel:
 	def __init__(self):
 		self.in_queue = None

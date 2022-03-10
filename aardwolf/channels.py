@@ -3,14 +3,10 @@ import asyncio
 import traceback
 import typing
 
-from asn1tools.codecs import restricted_utc_time_from_datetime
-
 from aardwolf.protocol.T124.userdata.constants import ChannelOption
-from aardwolf.protocol.T128.share import TS_SHARECONTROLHEADER, PDUTYPE
-from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
 
 class Channel:
-	def __init__(self, name, options = ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP):
+	def __init__(self, name:str, options:ChannelOption = ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP):
 		self.name = name
 		self.options = options
 		self.channel_id = None

@@ -10,6 +10,7 @@
 import ipaddress
 import enum
 import copy
+from aardwolf.commons.proxy import RDPProxy
 
 class RDPConnectionDialect(enum.Enum):
 	RDP = 'RDP'
@@ -21,8 +22,19 @@ class RDPConnectionProtocol(enum.Enum):
 class RDPTarget:
 	"""
 	"""
-	def __init__(self, ip = None, port = 3389, hostname = None, timeout = 1, dc_ip=None, 
-						domain = None, proxy = None, protocol = RDPConnectionProtocol.TCP, serverip = None, dialect = RDPConnectionDialect.RDP):
+	def __init__(
+			self, 
+			ip:str = None, 
+			port:int = 3389, 
+			hostname:str = None, 
+			timeout:int = 1, 
+			dc_ip:int=None, 
+			domain:str = None, 
+			proxy:RDPProxy = None, 
+			protocol:RDPConnectionProtocol = RDPConnectionProtocol.TCP, 
+			serverip = None, 
+			dialect:RDPConnectionDialect = RDPConnectionDialect.RDP):
+		
 		self.ip = ip
 		self.port = port
 		self.hostname = hostname
