@@ -62,7 +62,7 @@ setup(
 		'pyperclip>=1.8.2',
 		'arc4>=0.0.4', #faster than cryptodome
 		'Pillow>=9.0.0',
-		'unicrypto>=0.0.1',
+		'unicrypto>=0.0.2',
 	],
 	
 	
