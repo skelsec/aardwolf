@@ -252,12 +252,8 @@ class RDPConnection:
 				logger.debug('Server selected protocol: %s' % self.x224_protocol)
 				#print(self.x224_flag)
 				if SUPP_PROTOCOLS.SSL in self.x224_protocol or SUPP_PROTOCOLS.HYBRID in self.x224_protocol or SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
-					if platform.system() != 'Emscripten':
-						from aardwolf.transport.ssl import SSLClientTunnel
-						_, err = await self.__tpkgnet.switch_transport(SSLClientTunnel)
-					else:
-						from aardwolf.transport.mbedtlsssl import MBEDTLSClientTunnel
-						_, err = await self.__tpkgnet.switch_transport(MBEDTLSClientTunnel)
+					from aardwolf.transport.ssl import SSLClientTunnel
+					_, err = await self.__tpkgnet.switch_transport(SSLClientTunnel)
 					if err is not None:
 						raise err
 
