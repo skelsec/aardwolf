@@ -1,6 +1,7 @@
 import io
 import enum
 
+from aardwolf import logger
 from aardwolf.protocol.pdu.input.keyboard import *
 from aardwolf.protocol.pdu.input.unicode import *
 from aardwolf.protocol.pdu.input.mouse import *
@@ -54,7 +55,7 @@ class TS_INPUT_EVENT:
 		if ot is not None:
 			msg.input = ot.from_bytes(msg.slowPathInputData)
 		else:
-			print('Not implemented parser! %s' % msg.capabilitySetType)
+			logger.debug('Not implemented parser! %s' % msg.capabilitySetType)
 		return msg
 
 	def __repr__(self):

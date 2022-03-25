@@ -2,6 +2,7 @@ import io
 import enum
 from os import stat
 
+from aardwolf import logger
 from aardwolf.protocol.pdu.capabilities.bitmamachachehostsupp import *
 from aardwolf.protocol.pdu.capabilities.bitmap import *
 from aardwolf.protocol.pdu.capabilities.bitmapcache import *
@@ -102,7 +103,7 @@ class TS_CAPS_SET:
 			#if msg.capabilityData != msg.capability.to_bytes():
 			#	raise Exception('mismatch!')
 		else:
-			print('Not implemented parser! %s' % msg.capabilitySetType)
+			logger.debug('Not implemented parser! %s' % msg.capabilitySetType)
 		return msg
 
 	def __repr__(self):
