@@ -2,8 +2,9 @@
 
 :triangular_flag_on_post: This is the public repository of aardwolf, for latest version and updates please consider supporting us through https://porchetta.industries/
 
-# AARDWOLF - Asynchronous RDP/VNC client in Python
-This project is aimed to play around the RDP and VNC protocols.
+# AARDWOLF - Asynchronous RDP/VNC client in Python (headless)
+This project is aimed to play around the RDP and VNC protocols.  
+Project contains no GUI, for a GUI client please check out [`aardwolfgui`](https://github.com/skelsec/aardwolfgui)
 
 ## :triangular_flag_on_post: Sponsors
 
@@ -49,7 +50,7 @@ As usual the scripts take the target/scredentials in URL format. Below some exam
  VNC client with VNC authentication using password `admin:aa` connecting to RDP server `10.10.10.103`. Note that if the password contains `:` char you will have to prepend the password with `:`
 
 # Kudos
- - Citronneur's `rdpy`. The decompression code and the QT image magic was really valuable.
+ - Citronneur's [`rdpy`](https://github.com/citronneur/rdpy). The decompression code and the QT image magic was really valuable.
  - Marc-André Moreau (@awakecoding) for providing suggestions on fixes
 
 
