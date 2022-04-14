@@ -2,7 +2,7 @@
 
 :triangular_flag_on_post: This is the public repository of aardwolf, for latest version and updates please consider supporting us through https://porchetta.industries/
 
-# AARDWOLF - Asynchronous RDP client in Python
+# AARDWOLF - Asynchronous RDP/VNC client in Python
 This project is aimed to play around the RDP and VNC protocols.
 
 ## :triangular_flag_on_post: Sponsors
