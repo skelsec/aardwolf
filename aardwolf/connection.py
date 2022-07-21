@@ -1,50 +1,68 @@
 
-import traceback
-import asyncio
-import typing
+import io
 import copy
-import platform
+import typing
+import asyncio
+import traceback
 from typing import cast
 from collections import OrderedDict
 
 import asn1tools
 from PIL import Image
 from aardwolf import logger
-from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.keyboard import VK_MODIFIERS
+from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.commons.target import RDPTarget
-from aardwolf.network.selector import NetworkSelector
 from aardwolf.commons.credential import RDPCredential, RDPCredentialsSecretType
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
 from aardwolf.network.tpkt import TPKTNetwork
 from aardwolf.network.x224 import X224Network
+from aardwolf.network.selector import NetworkSelector
 
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
 from aardwolf.protocol.x224.server.connectionconfirm import RDP_NEG_RSP
 
+from aardwolf.protocol.pdu.input.keyboard import TS_UNICODE_KEYBOARD_EVENT, TS_KEYBOARD_EVENT, KBDFLAGS
+from aardwolf.protocol.pdu.input.mouse import PTRFLAGS, TS_POINTER_EVENT
+from aardwolf.protocol.pdu.capabilities import CAPSTYPE
+from aardwolf.protocol.pdu.capabilities.general import TS_GENERAL_CAPABILITYSET, OSMAJORTYPE, OSMINORTYPE, EXTRAFLAG
+from aardwolf.protocol.pdu.capabilities.bitmap import TS_BITMAP_CAPABILITYSET
+from aardwolf.protocol.pdu.capabilities.sound import TS_SOUND_CAPABILITYSET
+from aardwolf.protocol.pdu.capabilities.virtualchannel import TS_VIRTUALCHANNEL_CAPABILITYSET, VCCAPS
+from aardwolf.protocol.pdu.capabilities.offscreen import TS_OFFSCREEN_CAPABILITYSET
+from aardwolf.protocol.pdu.capabilities.glyph import TS_GLYPHCACHE_CAPABILITYSET
+from aardwolf.protocol.pdu.capabilities.brush import TS_BRUSH_CAPABILITYSET
+from aardwolf.protocol.pdu.capabilities.input import TS_INPUT_CAPABILITYSET, INPUT_FLAG
+from aardwolf.protocol.pdu.capabilities.pointer import TS_POINTER_CAPABILITYSET
+from aardwolf.protocol.pdu.capabilities.bitmapcache import TS_BITMAPCACHE_CAPABILITYSET
+from aardwolf.protocol.pdu.capabilities.order import TS_ORDER_CAPABILITYSET, ORDERFLAG
+
 from aardwolf.protocol.T124.GCCPDU import GCCPDU
 from aardwolf.protocol.T124.userdata import TS_UD, TS_SC
-from aardwolf.protocol.T124.userdata.constants import *
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE, HIGH_COLOR_DEPTH, ENCRYPTION_FLAG, SUPPORTED_COLOR_DEPTH, \
+	COLOR_DEPTH, CONNECTION_TYPE, RNS_UD_CS, ClusterInfo
 from aardwolf.protocol.T124.userdata.clientcoredata import TS_UD_CS_CORE
 from aardwolf.protocol.T124.userdata.clientsecuritydata import TS_UD_CS_SEC
 from aardwolf.protocol.T124.userdata.clientnetworkdata import TS_UD_CS_NET, CHANNEL_DEF
 from aardwolf.protocol.T124.userdata.clientclusterdata import TS_UD_CS_CLUSTER
 from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
-from aardwolf.protocol.T125.infopacket import *
-from aardwolf.protocol.T125.extendedinfopacket import *
+from aardwolf.protocol.T125.infopacket import TS_INFO_PACKET, INFO_FLAG
+from aardwolf.protocol.T125.extendedinfopacket import TS_EXTENDED_INFO_PACKET, TS_TIME_ZONE_INFORMATION, TS_SYSTEMTIME, CLI_AF
 from aardwolf.protocol.T125.MCSPDU_ver_2 import MCSPDU_ver_2
-from aardwolf.protocol.T125.serverdemandactivepdu import *
-from aardwolf.protocol.T125.clientconfirmactivepdu import *
-from aardwolf.protocol.T125.synchronizepdu import *
-from aardwolf.protocol.T125.controlpdu import *
-from aardwolf.protocol.T125.fontlistpdu import *
-from aardwolf.protocol.T125.inputeventpdu import *
+from aardwolf.protocol.T128.serverdemandactivepdu import TS_DEMAND_ACTIVE_PDU
+from aardwolf.protocol.T128.clientconfirmactivepdu import TS_SHARECONTROLHEADER, TS_CONFIRM_ACTIVE_PDU, TS_CAPS_SET
+from aardwolf.protocol.T128.synchronizepdu import TS_SYNCHRONIZE_PDU
+from aardwolf.protocol.T128.controlpdu import TS_CONTROL_PDU, CTRLACTION
+from aardwolf.protocol.T128.fontlistpdu import TS_FONT_LIST_PDU
+from aardwolf.protocol.T128.inputeventpdu import TS_SHAREDATAHEADER, TS_INPUT_EVENT, TS_INPUT_PDU_DATA
 from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
-from aardwolf.protocol.T125.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
+from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
+from aardwolf.protocol.T128.share import PDUTYPE, STREAM_TYPE, PDUTYPE2
+
 
 
 from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FASTPATH_FRAGMENT, FASTPATH_SEC, TS_FP_UPDATE
-from aardwolf.commons.queuedata import *
+from aardwolf.commons.queuedata import RDPDATATYPE, RDP_KEYBOARD_SCANCODE, RDP_KEYBOARD_UNICODE, RDP_MOUSE, RDP_VIDEO
 from aardwolf.commons.authbuilder import AuthenticatorBuilder
 from aardwolf.channels import Channel
 from aardwolf.commons.iosettings import RDPIOSettings
@@ -52,6 +70,14 @@ from aardwolf.commons.iosettings import RDPIOSettings
 
 class RDPConnection:
 	def __init__(self, target:RDPTarget, credentials:RDPCredential, iosettings:RDPIOSettings):
+		"""RDP client connection object. After successful connection the two asynchronous queues named `ext_out_queue` and `ext_in_queue`
+		can be used to communicate with the remote server
+
+		Args:
+			target (RDPTarget): Target object specifying the network connection details
+			credentials (RDPCredential): Credential object specifying the authentication details
+			iosettings (RDPIOSettings): Screen/Keyboard/IO settings
+		"""
 		self.target = target
 		self.credentials = credentials
 		self.authapi = None
@@ -186,8 +212,9 @@ class RDPConnection:
 		await asyncio.wait_for(self.terminate(), timeout = 5)
 	
 	async def connect(self):
-		"""
-		Performs the entire connection sequence 
+		"""Initiates the connection to the server, and performs authentication and all necessary setups.
+		Returns:
+			Tuple[bool, Exception]: _description_
 		"""
 		try:
 			self.__fastpath_in_queue = asyncio.Queue()
@@ -698,7 +725,8 @@ class RDPConnection:
 			extinfo.clientDir = 'C:\\WINNT\\System32\\mstscax.dll'
 			extinfo.clientTimeZone = systz
 			extinfo.clientSessionId = 0
-			#extinfo.performanceFlags = PERF.DISABLE_WALLPAPER | PERF.DISABLE_THEMING | PERF.DISABLE_CURSORSETTINGS | PERF.DISABLE_MENUANIMATIONS | PERF.DISABLE_FULLWINDOWDRAG
+			if self.iosettings.performance_flags is not None:
+				extinfo.performanceFlags = self.iosettings.performance_flags
 
 			info = TS_INFO_PACKET()
 			info.CodePage = 0

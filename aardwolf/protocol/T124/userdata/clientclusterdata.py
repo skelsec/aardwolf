@@ -1,7 +1,8 @@
 
 import io
+import enum
 from typing import List
-from aardwolf.protocol.T124.userdata.constants import *
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE, ClusterInfo
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/d68c629f-36a1-4a40-afd0-8b3e56d29aac
 class TS_UD_CS_CLUSTER:

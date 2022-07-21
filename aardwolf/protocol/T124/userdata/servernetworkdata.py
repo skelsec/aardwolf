@@ -1,7 +1,8 @@
 
 import io
+import enum
 from typing import List
-from aardwolf.protocol.T124.userdata.constants import *
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/89fa11de-5275-4106-9cf1-e5aa7709436c
 class TS_UD_SC_NET:

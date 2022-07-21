@@ -1,6 +1,6 @@
 import io
 
-from aardwolf.commons.utils.ts2dt import *
+from aardwolf.commons.utils.ts2dt import datetime2timestamp, timestamp2datetime
 from aardwolf.authentication.ntlm.structures.avpair import AVPairs, AVPAIRType
 
 # https://msdn.microsoft.com/en-us/library/cc236648.aspx

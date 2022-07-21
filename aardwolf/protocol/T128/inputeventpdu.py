@@ -1,8 +1,8 @@
 import io
 import enum
 from typing import List
-from aardwolf.protocol.T128.share import *
-from aardwolf.protocol.pdu.input import *
+from aardwolf.protocol.T128.share import TS_SHAREDATAHEADER
+from aardwolf.protocol.pdu.input import TS_INPUT_EVENT
 
 
 class TS_INPUT_PDU_DATA:

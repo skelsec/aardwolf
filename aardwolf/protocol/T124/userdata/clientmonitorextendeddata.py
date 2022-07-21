@@ -1,7 +1,8 @@
 
 import io
 from typing import List
-from aardwolf.protocol.T124.userdata.constants import *
+import enum
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE, ORIENTATION
 
 class TS_MONITOR_ATTRIBUTES:
 	def __init__(self):

@@ -1,6 +1,7 @@
 
 import io
-from aardwolf.protocol.T124.userdata.constants import *
+import enum
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/9269d58a-3d85-48a2-942a-bb0bbe5a55aa
 class TS_UD_SC_MCS_MSGCHANNEL:

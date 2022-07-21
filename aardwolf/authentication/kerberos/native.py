@@ -6,19 +6,11 @@
 # - Links - 
 # 1. See minikerberos library
 
-import datetime
-
-import os
-from minikerberos.common import *
-
-
-from minikerberos.protocol.asn1_structs import AP_REP, EncAPRepPart, EncryptedData, AP_REQ, Ticket
+from minikerberos.protocol.asn1_structs import AP_REP, EncAPRepPart, Ticket
 from aardwolf.authentication.kerberos.gssapi import get_gssapi, KRB5_MECH_INDEP_TOKEN
 from minikerberos.protocol.structures import ChecksumFlags
-from minikerberos.protocol.encryption import Enctype, Key, _enctype_table
-from minikerberos.protocol.constants import MESSAGE_TYPE
+from minikerberos.protocol.encryption import Key, _enctype_table
 from minikerberos.aioclient import AIOKerberosClient
-from minikerberos.network.aioclientsockssocket import AIOKerberosClientSocksSocket
 from aardwolf import logger
 
 

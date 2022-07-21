@@ -1,8 +1,6 @@
 import enum
 import io
-from typing import List
-from aardwolf.protocol.T128.share import *
-from aardwolf.protocol.pdu.capabilities import *
+from aardwolf.protocol.T128.share import TS_SHAREDATAHEADER
 
 class ERRINFO(enum.Enum):
 	UNK = 'blabla' # error not found

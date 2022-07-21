@@ -1,6 +1,7 @@
 
 import io
-from aardwolf.protocol.T124.userdata.constants import *
+import enum
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE, ENCRYPTION_FLAG
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/6b58e11e-a32b-4903-b736-339f3cfe46ec
 class TS_UD_CS_SEC:

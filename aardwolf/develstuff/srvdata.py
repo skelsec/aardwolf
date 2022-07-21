@@ -9,12 +9,12 @@ from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
 from aardwolf.protocol.T125.infopacket import *
 from aardwolf.protocol.T125.extendedinfopacket import *
 from aardwolf.protocol.T125.MCSPDU_ver_2 import MCSPDU_ver_2
-from aardwolf.protocol.T125.serverdemandactivepdu import *
-from aardwolf.protocol.T125.clientconfirmactivepdu import *
-from aardwolf.protocol.T125.synchronizepdu import *
-from aardwolf.protocol.T125.controlpdu import *
-from aardwolf.protocol.T125.fontlistpdu import *
-from aardwolf.protocol.T125.inputeventpdu import *
+from aardwolf.protocol.T128.serverdemandactivepdu import *
+from aardwolf.protocol.T128.clientconfirmactivepdu import *
+from aardwolf.protocol.T128.synchronizepdu import *
+from aardwolf.protocol.T128.controlpdu import *
+from aardwolf.protocol.T128.fontlistpdu import *
+from aardwolf.protocol.T128.inputeventpdu import *
 import asn1tools
 
 

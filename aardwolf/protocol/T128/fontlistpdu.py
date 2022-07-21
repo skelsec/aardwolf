@@ -1,6 +1,6 @@
 import io
 import enum
-from aardwolf.protocol.T128.share import *
+from aardwolf.protocol.T128.share import TS_SHAREDATAHEADER
 
 class TS_FONT_LIST_PDU:
 	def __init__(self):

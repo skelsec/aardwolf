@@ -2,7 +2,9 @@
 import os
 from aardwolf import logger
 from aardwolf.authentication.spnego.native import SPNEGO
-from aardwolf.authentication.credssp.messages.asn1_structs import *
+from aardwolf.authentication.credssp.messages.asn1_structs import NegoDatas, \
+	NegoData, TSRequest, TSRequest, TSPasswordCreds, TSCredentials, TSRemoteGuardCreds, \
+	TSRemoteGuardPackageCred
 from hashlib import sha256
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c
@@ -88,7 +90,7 @@ class CredSSPAuth:
 						# waiting for server to reply with the re-encrypted verification string + b'\x01'
 						tdata = TSRequest.load(token).native
 						if tdata['errorCode'] is not None:
-							raise Exception('CredSSP - Server sent an error! Code: %s' % tdata['errorCode'])
+							raise Exception('CredSSP - Server sent an error! Code: %s' % hex(tdata['errorCode'] & (2**32-1)))
 						if tdata['pubKeyAuth'] is None:
 							raise Exception('Missing pubKeyAuth')
 						verification_data, _ = await self.auth_ctx.decrypt(tdata['pubKeyAuth'], 0)

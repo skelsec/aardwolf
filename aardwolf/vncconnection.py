@@ -7,7 +7,6 @@
 # TODO: Add mouse scroll functionality (QT5 client needs to be modified for that)
 
 import io
-import copy
 import asyncio
 import traceback
 from struct import pack, unpack
@@ -20,7 +19,9 @@ from unicrypto.symmetric import DES, MODE_ECB
 
 from aardwolf.commons.target import RDPTarget
 from aardwolf.commons.credential import RDPCredential, RDPAuthProtocol
-from aardwolf.commons.queuedata import *
+from aardwolf.commons.queuedata import RDPDATATYPE, RDP_KEYBOARD_SCANCODE, RDP_KEYBOARD_UNICODE, \
+	RDP_MOUSE, RDP_VIDEO, RDP_CLIPBOARD_READY, RDP_CLIPBOARD_DATA_TXT, RDP_CLIPBOARD_NEW_DATA_AVAILABLE, \
+	RDP_BEEP
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT
 from aardwolf.protocol.vnc.keyboard import *
 from aardwolf.keyboard import VK_MODIFIERS

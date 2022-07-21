@@ -1,7 +1,6 @@
 
 import asyncio
 import traceback
-import typing
 
 from aardwolf.protocol.T124.userdata.constants import ChannelOption
 

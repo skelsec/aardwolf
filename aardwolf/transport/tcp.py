@@ -1,10 +1,6 @@
 import asyncio
 
 import logging
-import traceback
-import socket
-#from aardwolf import logger
-#from aardwolf.commons.exceptions import *
 
 class TCPSocket:
 	"""

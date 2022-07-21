@@ -1,7 +1,7 @@
 import io
 import enum
 from typing import List
-from aardwolf.protocol.T128.share import *
+from aardwolf.protocol.T128.share import TS_SHAREDATAHEADER
 
 class TS_BITMAPCACHE_PERSISTENT_LIST_ENTRY:
 	def __init__(self):

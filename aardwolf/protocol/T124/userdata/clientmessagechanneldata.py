@@ -1,6 +1,7 @@
 
 import io
-from aardwolf.protocol.T124.userdata.constants import *
+import enum
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f50e791c-de03-4b25-b17e-e914c9020bc3
 

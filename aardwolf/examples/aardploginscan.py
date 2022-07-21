@@ -8,9 +8,8 @@ import json
 from aardwolf import logger
 from aardwolf.commons.url import RDPConnectionURL
 from aardwolf.commons.iosettings import RDPIOSettings
-from aardwolf.examples.scancommons.targetgens import *
-from aardwolf.examples.scancommons.internal import *
-from aardwolf.examples.scancommons.utils import *
+from aardwolf.examples.scancommons.targetgens import ListTargetGen, FileTargetGen
+from aardwolf.examples.scancommons.internal import EnumResult, EnumResultStatus, EnumProgress
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS
 from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from tqdm import tqdm

@@ -1,9 +1,11 @@
-import enum
 import platform
 import os
 
 import copy
-from aardwolf.commons.credential import *
+from aardwolf.commons.credential import RDPAuthProtocol, RDPCredential, \
+	RDPNTLMCredential, RDPCredentialsSecretType, RDPKerberosCredential, \
+	RDPKerberosSSPICredential, RDPNTLMSSPICredential, RDPMultiplexorCredential, \
+	RDPMPNCredential, RDPWSNETCredential, RDPSSPIProxyCredential
 from aardwolf.commons.proxy import  RDPProxyType
 from aardwolf.authentication.spnego.native import SPNEGO
 from aardwolf.authentication.ntlm.native import NTLMAUTHHandler, NTLMHandlerSettings

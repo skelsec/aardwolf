@@ -2,12 +2,12 @@ import io
 import enum
 
 from aardwolf import logger
-from aardwolf.protocol.pdu.input.keyboard import *
-from aardwolf.protocol.pdu.input.unicode import *
-from aardwolf.protocol.pdu.input.mouse import *
-from aardwolf.protocol.pdu.input.mousex import *
-from aardwolf.protocol.pdu.input.sync import *
-from aardwolf.protocol.pdu.input.unused import *
+from aardwolf.protocol.pdu.input.keyboard import TS_KEYBOARD_EVENT
+from aardwolf.protocol.pdu.input.unicode import TS_UNICODE_KEYBOARD_EVENT
+from aardwolf.protocol.pdu.input.mouse import TS_POINTER_EVENT
+from aardwolf.protocol.pdu.input.mousex import TS_POINTERX_EVENT
+from aardwolf.protocol.pdu.input.sync import TS_SYNC_EVENT
+from aardwolf.protocol.pdu.input.unused import TS_UNUSED_EVENT
 
 
 class INPUT_EVENT(enum.Enum):

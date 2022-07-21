@@ -1,5 +1,4 @@
 
-from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPRDR_LONG_FORMAT_NAME
 import asyncio
 import traceback
 import enum
@@ -11,9 +10,9 @@ from aardwolf.extensions.RDPECLIP.protocol import *
 from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_GENERAL_CAPABILITY, CB_GENERAL_FALGS
 from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
-from aardwolf.commons.queuedata import *
+from aardwolf.commons.queuedata import RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
 from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA_TXT
-from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
+from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
 
 class CLIPBRDSTATUS(enum.Enum):
 	WAITING_SERVER_INIT = enum.auto()

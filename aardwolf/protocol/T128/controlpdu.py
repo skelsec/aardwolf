@@ -1,6 +1,6 @@
 import io
 import enum
-from aardwolf.protocol.T128.share import *
+from aardwolf.protocol.T128.share import TS_SHAREDATAHEADER
 
 class CTRLACTION(enum.Enum):
 	REQUEST_CONTROL = 0x0001 #Request control

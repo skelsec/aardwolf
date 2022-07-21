@@ -14,7 +14,7 @@ from aardwolf.authentication.ntlm.structures.ntlmssp_message_signature_noext imp
 from aardwolf.authentication.ntlm.messages.negotiate import NTLMNegotiate
 from aardwolf.authentication.ntlm.messages.challenge import NTLMChallenge
 from aardwolf.authentication.ntlm.messages.authenticate import NTLMAuthenticate
-from aardwolf.authentication.ntlm.creds_calc import *
+from aardwolf.authentication.ntlm.creds_calc import netntlmv2, AVPAIRType, LMResponse, netntlm, netntlm_ess
 from unicrypto.symmetric import RC4
 from unicrypto import hashlib
 from unicrypto import hmac
