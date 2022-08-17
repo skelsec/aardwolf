@@ -13,12 +13,10 @@ from struct import pack, unpack
 from typing import cast
 
 from aardwolf import logger
-from aardwolf.network.selector import NetworkSelector
 from aardwolf.transport.tcpstream import TCPStream
 from unicrypto.symmetric import DES, MODE_ECB
 
 from aardwolf.commons.target import RDPTarget
-from aardwolf.commons.credential import RDPCredential, RDPAuthProtocol
 from aardwolf.commons.queuedata import RDPDATATYPE, RDP_KEYBOARD_SCANCODE, RDP_KEYBOARD_UNICODE, \
 	RDP_MOUSE, RDP_VIDEO, RDP_CLIPBOARD_READY, RDP_CLIPBOARD_DATA_TXT, RDP_CLIPBOARD_NEW_DATA_AVAILABLE, \
 	RDP_BEEP
@@ -28,6 +26,8 @@ from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.commons.iosettings import RDPIOSettings
+from uniauth.common.credentials import UniCredential
+from uniauth.common.constants import UniAuthSecret
 
 from PIL import Image
 try:
@@ -51,7 +51,7 @@ TRLE_ENCODING = 15
 ZRLE_ENCODING = 16
 
 class VNCConnection:
-	def __init__(self, target:RDPTarget, credentials:RDPCredential, iosettings:RDPIOSettings):
+	def __init__(self, target:RDPTarget, credentials:UniCredential, iosettings:RDPIOSettings):
 		self.target = target
 		self.credentials = credentials
 		self.authapi = None
@@ -62,7 +62,7 @@ class VNCConnection:
 		self.server_name = None
 		self.disconnected_evt = asyncio.Event() #this will be set if we disconnect for whatever reason
 		self.server_supp_security_types = []
-		self.__selected_security_type = 1 if self.credentials.authentication_type == RDPAuthProtocol.NONE else 2 #currently we only support these 2
+		self.__selected_security_type = 1 if self.credentials.stype == UniAuthSecret.NONE else 2 #currently we only support these 2
 		self.__refresh_screen_task = None
 		self.__reader_loop_task = None
 		self.__external_reader_task = None
@@ -817,14 +817,14 @@ class VNCConnection:
 async def amain():
 	try:
 		logger.setLevel(1)
-		from aardwolf.commons.url import RDPConnectionURL
+		from aardwolf.commons.factory import RDPConnectionFactory
 		from aardwolf.commons.iosettings import RDPIOSettings
 
 		iosettings = RDPIOSettings()
 		iosettings.video_out_format = VIDEO_FORMAT.RAW
 		
 		url = 'vnc+plain://alma:alma@10.10.10.102:5900'
-		url = RDPConnectionURL(url)
+		url = RDPConnectionFactory.from_url(url)
 		connection = url.get_connection(iosettings)
 
 		_, err = await connection.connect()

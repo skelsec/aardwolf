@@ -63,6 +63,7 @@ setup(
 		'arc4>=0.0.4', #faster than cryptodome
 		'Pillow>=9.0.0',
 		'unicrypto>=0.0.4',
+		'uniauth>=0.0.1'
 	],
 	
 	
@@ -72,10 +73,7 @@ setup(
 	],
 	entry_points={
 		'console_scripts': [
-			'aardpcapsscan = aardwolf.examples.aardpcapscan:main',
-			'aardploginscan = aardwolf.examples.aardploginscan:main',
-			'aardpscreenshot = aardwolf.examples.aardpscreenshot:main',
+			'ardpscan = aardwolf.examples.scanners.__main__:main',
 		],
-
 	}
 )

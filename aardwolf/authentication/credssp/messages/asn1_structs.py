@@ -1,8 +1,5 @@
 
 from asn1crypto.core import Integer, ObjectIdentifier, Sequence, SequenceOf, Enumerated, GeneralString, OctetString, BitString, Choice, Any, Boolean
-import enum
-import os
-import io
 
 TAG = 'explicit'
 

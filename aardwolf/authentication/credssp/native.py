@@ -6,6 +6,7 @@ from aardwolf.authentication.credssp.messages.asn1_structs import NegoDatas, \
 	NegoData, TSRequest, TSRequest, TSPasswordCreds, TSCredentials, TSRemoteGuardCreds, \
 	TSRemoteGuardPackageCred
 from hashlib import sha256
+from asn1crypto.x509 import Certificate
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c
 
@@ -20,13 +21,21 @@ class CredSSPAuth:
 		self.__internal_auth_continue = True
 		self.seqno = 0
 
+	@staticmethod
+	def certificate_to_pubkey(certdata):
+		# credSSP auth requires knowledge of the server's public key
+		cert = Certificate.load(certdata)
+		return cert['tbs_certificate']['subject_public_key_info']['public_key'].dump()[5:] #why?
+
 	def get_extra_info(self):
 		return self.auth_ctx.get_extra_info()
 
-	async def authenticate(self, token, flags = None, pubkey = None, remote_credguard = False):
+	async def authenticate(self, token, flags = None, certificate = None, remote_credguard = False):
 		try:
 			# currently only SSPI supported
 
+			if certificate is not None:
+				pubkey = CredSSPAuth.certificate_to_pubkey(certificate)
 			if self.mode != 'CLIENT':
 				raise NotImplementedError()
 			else:
