@@ -61,3 +61,5 @@ class RDPScreenshotScanner:
 				buffer.save(data,'png')
 				data.seek(0,0)
 				await out_queue.put(ScannerData(target, RDPScreenshotRes(target, data.read())))
+			if connection is not None:
+				await connection.terminate()

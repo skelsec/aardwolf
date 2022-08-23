@@ -42,11 +42,11 @@ class RDPECLIPChannel(Channel):
 				try:
 					import pyperclip
 				except ImportError:
-					logger.info('Could not import pyperclip! Copy-paste will not work!')
+					logger.debug('Could not import pyperclip! Copy-paste will not work!')
 					self.use_pyperclip = False
 				else:
 					if not pyperclip.is_available():
-						logger.info("pyperclip - Copy functionality available!")
+						logger.debug("pyperclip - Copy functionality available!")
 			
 			return True, None
 		except Exception as e:
@@ -155,7 +155,7 @@ class RDPECLIPChannel(Channel):
 						await self.fragment_and_send(msg)
 					
 					else:
-						logger.info('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
+						logger.debug('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
 						
 			
 			elif self.status == CLIPBRDSTATUS.WAITING_SERVER_INIT:
@@ -222,7 +222,7 @@ class RDPECLIPChannel(Channel):
 				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
 				sec_hdr.flagsHi = 0
 
-			await self.send_channel_data(packet, sec_hdr, None, None, self.channel_id, False)
+			await self.send_channel_data(packet, sec_hdr, None, None, False)
 
 			return True, False
 		except Exception as e:

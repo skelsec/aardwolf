@@ -95,7 +95,7 @@ class DuckyExecutorBase:
 	
 	async def do_rem(self, data:List[str]):
 		data = ' '.join(data)
-		logger.info(data)
+		logger.debug(data)
 
 	async def do_defaultdelay(self, delay:int):
 		delay = ' '.join(delay)

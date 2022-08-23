@@ -262,12 +262,12 @@ class VNCConnection:
 			try:
 				import pyperclip
 			except ImportError:
-				logger.info('Could not import pyperclip! Copy-paste will not work!')
+				logger.debug('Could not import pyperclip! Copy-paste will not work!')
 				self.__use_pyperclip = False
 			else:
 				self.__use_pyperclip = True
 				if not pyperclip.is_available():
-					logger.info("pyperclip - Copy functionality available!")
+					logger.debug("pyperclip - Copy functionality available!")
 		return True, None
 	
 	async def __banner_exchange(self):
@@ -761,7 +761,7 @@ class VNCConnection:
 					(_,_,_, cliplen ) = unpack("!BBBI", hdr)
 					cliptext = await self.__reader.readexactly(cliplen)
 					cliptext = cliptext.decode('latin-1') #latin-1 is per RFC
-					logger.info('Got clipboard test: %s' % repr(cliptext))
+					logger.debug('Got clipboard test: %s' % repr(cliptext))
 					if self.__use_pyperclip is True:
 						import pyperclip
 						pyperclip.copy(cliptext)
