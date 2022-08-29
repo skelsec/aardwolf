@@ -4,7 +4,7 @@ from asysocks.unicomm.common.proxy import UniProxyProto, UniProxyTarget
 from aardwolf.commons.iosettings import RDPIOSettings
 
 from aardwolf.commons.target import RDPTarget, RDPConnectionDialect
-from uniauth.common.credentials import UniCredential
+from asyauth.common.credentials import UniCredential
 from aardwolf.connection import RDPConnection
 from aardwolf.vncconnection import VNCConnection
 import ipaddress

@@ -26,8 +26,8 @@ from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.keyboard.layoutmanager import KeyboardLayoutManager
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.commons.iosettings import RDPIOSettings
-from uniauth.common.credentials import UniCredential
-from uniauth.common.constants import UniAuthSecret
+from asyauth.common.credentials import UniCredential
+from asyauth.common.constants import asyauthSecret
 
 from PIL import Image
 try:
@@ -62,7 +62,7 @@ class VNCConnection:
 		self.server_name = None
 		self.disconnected_evt = asyncio.Event() #this will be set if we disconnect for whatever reason
 		self.server_supp_security_types = []
-		self.__selected_security_type = 1 if self.credentials.stype == UniAuthSecret.NONE else 2 #currently we only support these 2
+		self.__selected_security_type = 1 if self.credentials.stype == asyauthSecret.NONE else 2 #currently we only support these 2
 		self.__refresh_screen_task = None
 		self.__reader_loop_task = None
 		self.__external_reader_task = None

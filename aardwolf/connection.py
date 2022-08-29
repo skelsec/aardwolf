@@ -13,11 +13,11 @@ from aardwolf import logger
 from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.commons.target import RDPTarget
-from uniauth.common.credentials import UniCredential
-from uniauth.common.constants import UniAuthSecret, UniAuthProtocol
+from asyauth.common.credentials import UniCredential
+from asyauth.common.constants import asyauthSecret, asyauthProtocol
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
 from aardwolf.network.x224 import X224Network
-from uniauth.common.credentials.credssp import CREDSSPCredential
+from asyauth.common.credentials.credssp import CREDSSPCredential
 
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
 from aardwolf.protocol.x224.server.connectionconfirm import RDP_NEG_RSP
@@ -219,8 +219,8 @@ class RDPConnection:
 			# are set here
 			self._x224net = X224Network(self.__connection)
 			if self.client_x224_supported_protocols is None and self.credentials is not None:
-				if self.credentials.protocol in [UniAuthProtocol.NTLM, UniAuthProtocol.KERBEROS]:
-					if self.credentials.secret is not None and self.credentials.stype not in [UniAuthSecret.PASSWORD, UniAuthSecret.PWPROMPT, UniAuthSecret.PWHEX, UniAuthSecret.PWB64]:
+				if self.credentials.protocol in [asyauthProtocol.NTLM, asyauthProtocol.KERBEROS]:
+					if self.credentials.secret is not None and self.credentials.stype not in [asyauthSecret.PASSWORD, asyauthSecret.PWPROMPT, asyauthSecret.PWHEX, asyauthSecret.PWB64]:
 						# user provided some secret but it's not a password
 						# here we request restricted admin mode
 						self.client_x224_flags = NEG_FLAGS.RESTRICTED_ADMIN_MODE_REQUIRED
@@ -229,7 +229,7 @@ class RDPConnection:
 						self.client_x224_flags = 0
 						self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL | SUPP_PROTOCOLS.HYBRID_EX | SUPP_PROTOCOLS.HYBRID
 				
-				elif self.credentials.stype == UniAuthSecret.NONE: #and self.credentials.username is None:
+				elif self.credentials.stype == asyauthSecret.NONE: #and self.credentials.username is None:
 					# not sending any passwords, hoping HYBRID is not required
 					self.client_x224_flags = 0
 					self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL
