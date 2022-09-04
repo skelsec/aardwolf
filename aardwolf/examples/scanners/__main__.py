@@ -6,7 +6,7 @@ from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from aardwolf.commons.iosettings import RDPIOSettings
 from asysocks.unicomm.common.scanner.targetgen import UniTargetGen
 from asysocks.unicomm.common.scanner.scanner import UniScanner
-from aiosmb import logger
+from aardwolf import logger
 
 from aardwolf.examples.scanners.rdplogin import RDPLoginScanner
 from aardwolf.examples.scanners.rdpscaps import RDPCapabilitiesScanner
@@ -45,7 +45,7 @@ Scanner types (-s param):
 		print('No targets defined!')
 		return
 	
-	logger.setLevel(logging.CRITICAL)
+	logger.setLevel(logging.DEBUG)
 
 	iosettings = RDPIOSettings()
 	iosettings.channels = []

@@ -52,16 +52,16 @@ setup(
 
 
 	install_requires=[
-		'unicrypto>=0.0.4',
-		'asyauth>=0.0.1',
-		'asysocks>=0.1.7',
-		'minikerberos>=0.2.20',
+		'unicrypto>=0.0.9',
+		'asyauth>=0.0.2',
+		'asysocks>=0.2.1',
+		'minikerberos>=0.3.1',
 		'tqdm',
 		'colorama',
 		'asn1crypto',
 		'asn1tools',
 		'pyperclip>=1.8.2',
-		'arc4>=0.0.4', #faster than cryptodome
+		'arc4>=0.3.0', #faster than cryptodome
 		'Pillow>=9.0.0',		
 	],
 	

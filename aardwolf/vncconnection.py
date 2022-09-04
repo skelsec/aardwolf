@@ -28,6 +28,9 @@ from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.commons.iosettings import RDPIOSettings
 from asyauth.common.credentials import UniCredential
 from asyauth.common.constants import asyauthSecret
+from asysocks.unicomm.client import UniClient
+from asysocks.unicomm.common.connection import UniConnection
+from asysocks.unicomm.common.packetizers import StreamPacketizer
 
 from PIL import Image
 try:
@@ -56,6 +59,7 @@ class VNCConnection:
 		self.credentials = credentials
 		self.authapi = None
 		self.iosettings = iosettings
+		self.__connection:UniConnection = None
 		self.shared_flag = False
 		self.client_version = '003.008'
 		self.server_version = None
@@ -172,7 +176,7 @@ class VNCConnection:
 	async def terminate(self):
 		try:
 			if self.__writer is not None:
-				self.__writer.close()
+				await self.__writer.close()
 			if self.__refresh_screen_task is not None:
 				self.__refresh_screen_task.cancel()
 			if self.__reader_loop_task is not None:
@@ -202,19 +206,12 @@ class VNCConnection:
 		Performs the entire connection sequence 
 		"""
 		try:
-			# starting lower-layer transports 
-			logger.debug('Selecting network')
-			remote_socket, err = await NetworkSelector.select(self.target)
-			if err is not None:
-				raise err
-
-			logger.debug('Connecting sockets')
-			_, err = await remote_socket.connect()
-			if err is not None:
-				raise err
-			
-			logger.debug('Wrapping sockets to streamer')
-			self.__reader, self.__writer = await TCPStream.from_tcpsocket(remote_socket)
+			packetizer = StreamPacketizer()
+			client = UniClient(self.target, packetizer)
+			self.__connection = await client.connect()
+			asyncio.create_task(self.__connection.stream())
+			self.__reader = self.__connection.packetizer
+			self.__writer = self.__connection
 
 			logger.debug('Performing banner exchange')
 			_, err = await self.__banner_exchange()
@@ -277,7 +274,7 @@ class VNCConnection:
 			logger.debug('Server version: %s' % self.server_version)
 			version_reply = b'RFB %s\n' % self.client_version.encode()
 			logger.debug('Version reply: %s' % version_reply)
-			self.__writer.write(version_reply)
+			await self.__writer.write(version_reply)
 			return True, None
 		except Exception as e:
 			return None, e
@@ -318,7 +315,7 @@ class VNCConnection:
 			
 			elif self.__selected_security_type == 2:
 				logger.debug('Selecting default VNC auth type')
-				self.__writer.write(bytes([self.__selected_security_type]))
+				await self.__writer.write(bytes([self.__selected_security_type]))
 				challenge = await self.__reader.readexactly(16)
 
 				# no username used here, but we support RDP as well
@@ -339,7 +336,7 @@ class VNCConnection:
 					newkey+= bytes([btgt])
 				ctx = DES(newkey, mode = MODE_ECB, IV = None)
 				response = ctx.encrypt(challenge)
-				self.__writer.write(response)
+				await self.__writer.write(response)
 
 			else:
 				raise Exception('Unsupported security type selected!')
@@ -361,7 +358,7 @@ class VNCConnection:
 	async def __client_init(self):
 		try:
 			# sending client init
-			self.__writer.write(bytes([int(self.shared_flag)]))
+			await self.__writer.write(bytes([int(self.shared_flag)]))
 			# reading server_init
 			framebuffer_width = await self.__reader.readexactly(2)
 			self.width = int.from_bytes(framebuffer_width, byteorder = 'big', signed = False)
@@ -434,7 +431,7 @@ class VNCConnection:
 	async def send_key_char(self, char, is_pressed):
 		try:
 			msg = pack("!BBxxI", 4, int(is_pressed), char)
-			self.__writer.write(msg)
+			await self.__writer.write(msg)
 			return True, None
 		except Exception as e:
 			traceback.print_exc()
@@ -468,7 +465,7 @@ class VNCConnection:
 				if buttoncode == 5: buttonmask |= 16
 			
 			msg = pack("!BBHH", 5, buttonmask, xPos, yPos)
-			self.__writer.write(msg)
+			await self.__writer.write(msg)
 			return True, None
 		except Exception as e:
 			traceback.print_exc()
@@ -587,7 +584,7 @@ class VNCConnection:
 						txtdata = indata.data.encode('latin-1')
 						msg = pack("!BxxxI", 6, len(txtdata))
 						msg += txtdata
-						self.__writer.write(msg)
+						await self.__writer.write(msg)
 					except Exception as e:
 						traceback.print_exc()
 						continue
@@ -651,6 +648,7 @@ class VNCConnection:
 
 	async def __reader_loop(self):
 		try:
+			ctr = 0
 			while True:
 				msgtype = await self.__reader.readexactly(1)
 				msgtype = ord(msgtype)
@@ -786,7 +784,7 @@ class VNCConnection:
 			for encoding in list_of_encodings:
 				enc_encodings += encoding.to_bytes(4, byteorder = 'big', signed = True)
 			sendbuff = pack("!BxH", 2, len(list_of_encodings)) + enc_encodings
-			self.__writer.write(sendbuff)
+			await self.__writer.write(sendbuff)
 			return True, None
 		except Exception as e:
 			return None, e
@@ -796,7 +794,7 @@ class VNCConnection:
 		"""Sends a setpixelformat message to the server, letting the server know our preferred image data encodings"""
 
 		pixformat = pack("!BBBBHHHBBBxxx", bpp, depth, bigendian, truecolor, redmax, greenmax, bluemax, redshift, greenshift, blueshift)
-		self.__writer.write(b'\x00\x00\x00\x00' + pixformat)
+		await self.__writer.write(b'\x00\x00\x00\x00' + pixformat)
 		# rember these settings
 		self.bpp, self.depth, self.bigendian, self.truecolor = bpp, depth, bigendian, truecolor
 		self.redmax, self.greenmax, self.bluemax = redmax, greenmax, bluemax
@@ -812,7 +810,7 @@ class VNCConnection:
 		if height is None:
 			height = self.height - y
 
-		self.__writer.write(pack("!BBHHHH", 3, incremental, x, y, width, height))
+		await self.__writer.write(pack("!BBHHHH", 3, incremental, x, y, width, height))
 
 async def amain():
 	try:
@@ -823,7 +821,7 @@ async def amain():
 		iosettings = RDPIOSettings()
 		iosettings.video_out_format = VIDEO_FORMAT.RAW
 		
-		url = 'vnc+plain://alma:alma@10.10.10.102:5900'
+		url = 'vnc+plain-password://alma:alma@10.10.10.102:5900'
 		url = RDPConnectionFactory.from_url(url)
 		connection = url.get_connection(iosettings)
 

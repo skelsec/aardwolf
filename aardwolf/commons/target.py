@@ -96,6 +96,7 @@ class RDPTarget(UniTarget):
 			proxies = unitarget.proxies,
 			protocol = unitarget.protocol,
 			dns = unitarget.dns,
+			dialect = dialect,
 		)
 		
 		return target
