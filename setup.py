@@ -52,7 +52,7 @@ setup(
 
 
 	install_requires=[
-		'minikerberos>=0.2.20',
+		'minikerberos>=0.3.1',
 		'winsspi>=0.0.9',
 		'asysocks>=0.1.7',
 		'tqdm',
