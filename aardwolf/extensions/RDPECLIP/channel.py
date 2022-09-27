@@ -231,7 +231,6 @@ class RDPECLIPChannel(Channel):
 	
 
 	async def process_user_data(self, data):
-		data = await self.in_queue.get()
 		#print('monitor out! %s' % data)
 		if data.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
 			# data in, informing the server that our clipboard has changed

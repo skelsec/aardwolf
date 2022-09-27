@@ -22,7 +22,8 @@ from asyauth.common.credentials.credssp import CREDSSPCredential
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
 from aardwolf.protocol.x224.server.connectionconfirm import RDP_NEG_RSP
 
-from aardwolf.protocol.pdu.input.keyboard import TS_UNICODE_KEYBOARD_EVENT, TS_KEYBOARD_EVENT, KBDFLAGS
+from aardwolf.protocol.pdu.input.keyboard import TS_KEYBOARD_EVENT, KBDFLAGS
+from aardwolf.protocol.pdu.input.unicode import TS_UNICODE_KEYBOARD_EVENT
 from aardwolf.protocol.pdu.input.mouse import PTRFLAGS, TS_POINTER_EVENT
 from aardwolf.protocol.pdu.capabilities import CAPSTYPE
 from aardwolf.protocol.pdu.capabilities.general import TS_GENERAL_CAPABILITYSET, OSMAJORTYPE, OSMINORTYPE, EXTRAFLAG
