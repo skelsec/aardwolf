@@ -52,17 +52,17 @@ setup(
 
 
 	install_requires=[
-		'minikerberos>=0.2.20',
-		'winsspi>=0.0.9',
-		'asysocks>=0.1.7',
+		'unicrypto>=0.0.9',
+		'asyauth>=0.0.5',
+		'asysocks>=0.2.2',
+		'minikerberos>=0.3.3',
 		'tqdm',
 		'colorama',
 		'asn1crypto',
 		'asn1tools',
 		'pyperclip>=1.8.2',
-		'arc4>=0.0.4', #faster than cryptodome
-		'Pillow>=9.0.0',
-		'unicrypto>=0.0.4',
+		'arc4>=0.3.0', #faster than cryptodome
+		'Pillow>=9.0.0',		
 	],
 	
 	
@@ -72,10 +72,7 @@ setup(
 	],
 	entry_points={
 		'console_scripts': [
-			'aardpcapsscan = aardwolf.examples.aardpcapscan:main',
-			'aardploginscan = aardwolf.examples.aardploginscan:main',
-			'aardpscreenshot = aardwolf.examples.aardpscreenshot:main',
+			'ardpscan = aardwolf.examples.scanners.__main__:main',
 		],
-
 	}
 )

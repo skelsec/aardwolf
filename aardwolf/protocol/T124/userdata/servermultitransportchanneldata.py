@@ -1,6 +1,7 @@
 
 import io
-from aardwolf.protocol.T124.userdata.constants import *
+import enum
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE, MultitransportFlags
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/bf7201d4-9ed9-4dfe-9f6f-f2d68a7367ed
 class TS_UD_SC_MULTITRANSPORT:

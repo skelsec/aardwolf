@@ -1,5 +1,4 @@
 
-from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPRDR_LONG_FORMAT_NAME
 import asyncio
 import traceback
 import enum
@@ -11,9 +10,9 @@ from aardwolf.extensions.RDPECLIP.protocol import *
 from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_GENERAL_CAPABILITY, CB_GENERAL_FALGS
 from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
-from aardwolf.commons.queuedata import *
+from aardwolf.commons.queuedata import RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
 from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA_TXT
-from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG, TS_SECURITY_HEADER1
+from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
 
 class CLIPBRDSTATUS(enum.Enum):
 	WAITING_SERVER_INIT = enum.auto()
@@ -28,8 +27,6 @@ class RDPECLIPChannel(Channel):
 		self.use_pyperclip = iosettings.clipboard_use_pyperclip
 		self.status = CLIPBRDSTATUS.WAITING_SERVER_INIT
 		self.compression_needed = False #TODO: tie it to flags
-		self.channel_data_out_q = asyncio.Queue()
-		self.channel_data_monitor_task = None
 		self.supported_formats = [CLIPBRD_FORMAT.CF_UNICODETEXT] #, CLIPBRD_FORMAT.CF_HDROP
 		self.server_caps = None
 		self.server_general_caps = None
@@ -45,54 +42,21 @@ class RDPECLIPChannel(Channel):
 				try:
 					import pyperclip
 				except ImportError:
-					logger.info('Could not import pyperclip! Copy-paste will not work!')
+					logger.debug('Could not import pyperclip! Copy-paste will not work!')
 					self.use_pyperclip = False
 				else:
 					if not pyperclip.is_available():
-						logger.info("pyperclip - Copy functionality available!")
-
-
-			self.channel_data_monitor_task = asyncio.create_task(self.channel_data_monitor())
-			#self.process_msg_in_task = asyncio.create_task(self.process_msg_in_task())
+						logger.debug("pyperclip - Copy functionality available!")
+			
 			return True, None
 		except Exception as e:
 			return None, e
 
 	async def stop(self):
-		try:
-			if self.channel_data_monitor_task is not None:
-				self.channel_data_monitor_task.cancel()
-				
+		try:				
 			return True, None
 		except Exception as e:
 			return None, e
-
-	async def channel_data_monitor(self):
-		try:
-			while True:
-				data = await self.channel_data_out_q.get()
-				if len(data) < 16000:
-					if self.compression_needed is False:
-						flags = CHANNEL_FLAG.CHANNEL_FLAG_FIRST|CHANNEL_FLAG.CHANNEL_FLAG_LAST|CHANNEL_FLAG.CHANNEL_FLAG_SHOW_PROTOCOL
-						packet = CHANNEL_PDU_HEADER.serialize_packet(flags, data)
-
-					else:
-						raise NotImplementedError('Compression not implemented!')
-				else:
-					raise NotImplementedError('Chunked send not implemented!')
-
-				sec_hdr = None
-				if self.connection.cryptolayer is not None:
-					sec_hdr = TS_SECURITY_HEADER()
-					sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
-					sec_hdr.flagsHi = 0
-
-				await self.connection.handle_out_data(packet, sec_hdr, None, None, self.channel_id, False)
-
-			return True, False
-		except Exception as e:
-			traceback.print_exc()
-			return None,e
 
 	async def __send_capabilities(self):
 		# server sent monitor ready, now we must send our capabilites
@@ -105,14 +69,14 @@ class RDPECLIPChannel(Channel):
 			caps.capabilitySets.append(gencap)
 
 			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_CLIP_CAPS, 0, caps)
-			await self.channel_data_out_q.put(msg)
+			await self.fragment_and_send(msg)
 
 			## if remote drive is attached this should be sent
 			# sending tempdir location
 			# tempdir = CLIPRDR_TEMP_DIRECTORY()
 			# tempdir.wszTempDir = 'C:\\Windows\\Temp\\'
 			# msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_TEMP_DIRECTORY, 0, tempdir)
-			# await self.channel_data_out_q.put(msg)
+			# await self.fragment_and_send(msg)
 
 			# synchronizing formatlist
 			fmtl = CLIPRDR_FORMAT_LIST()
@@ -123,7 +87,7 @@ class RDPECLIPChannel(Channel):
 
 			self.status = CLIPBRDSTATUS.CLIENT_INIT
 			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST, 0, fmtl)
-			await self.channel_data_out_q.put(msg)
+			await self.fragment_and_send(msg)
 		
 			return True, None
 		except Exception as e:
@@ -142,7 +106,7 @@ class RDPECLIPChannel(Channel):
 					
 					# sending back an OK
 					msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST_RESPONSE, CB_FLAG.CB_RESPONSE_OK, None)
-					await self.channel_data_out_q.put(msg)
+					await self.fragment_and_send(msg)
 
 					if CLIPBRD_FORMAT.CF_UNICODETEXT in self.current_server_formats.keys():
 						# pyperclip is in use and server just notified us about a new text copied, so we request the text
@@ -151,11 +115,11 @@ class RDPECLIPChannel(Channel):
 						dreq = CLIPRDR_FORMAT_DATA_REQUEST()
 						dreq.requestedFormatId = CLIPBRD_FORMAT.CF_UNICODETEXT
 						msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_REQUEST, 0, dreq)
-						await self.channel_data_out_q.put(msg)
+						await self.fragment_and_send(msg)
 
 						# notifying client that new data is available
 						msg = RDP_CLIPBOARD_NEW_DATA_AVAILABLE()
-						await self.connection.ext_out_queue.put(msg)
+						await self.send_user_data(msg)
 
 				
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_DATA_RESPONSE:
@@ -172,7 +136,7 @@ class RDPECLIPChannel(Channel):
 							msg = RDP_CLIPBOARD_DATA_TXT()
 							msg.data = fmtdata.dataobj
 							msg.datatype = self.__requested_format
-							await self.connection.ext_out_queue.put(msg)
+							await self.send_user_data(msg)
 						
 						except Exception as e:
 							raise e
@@ -188,10 +152,10 @@ class RDPECLIPChannel(Channel):
 						resp = resp.to_bytes(self.__current_clipboard_data.datatype)
 
 						msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_RESPONSE, CB_FLAG.CB_RESPONSE_OK, resp)
-						await self.channel_data_out_q.put(msg)
+						await self.fragment_and_send(msg)
 					
 					else:
-						logger.info('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
+						logger.debug('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
 						
 			
 			elif self.status == CLIPBRDSTATUS.WAITING_SERVER_INIT:
@@ -218,7 +182,7 @@ class RDPECLIPChannel(Channel):
 						# also we have to notify the client that they can use the keyboard now
 						self.status = CLIPBRDSTATUS.RUNNING
 						msg = RDP_CLIPBOARD_READY()
-						await self.connection.ext_out_queue.put(msg)
+						await self.send_user_data(msg)
 
 					elif CB_FLAG.CB_RESPONSE_FAIL in hdr.msgFlags:
 						raise Exception('Server refused clipboard initialization!')
@@ -232,62 +196,60 @@ class RDPECLIPChannel(Channel):
 		except Exception as e:
 			return None, e
 
-	async def monitor_in(self):
-		try:
-			while True:
-				data, err = await self.raw_in_queue.get()
-				if err is not None:
-					await self.out_queue.put((data, err))
-					raise err
-				#print('Channel data in! "%s(%s)" <- %s' % (self.name, self.channel_id, data))		
-				
-				channeldata = CHANNEL_PDU_HEADER.from_bytes(data)
-				#print('channeldata %s' % channeldata)
-				self.__buffer += channeldata.data
-				if CHANNEL_FLAG.CHANNEL_FLAG_LAST in channeldata.flags:
-					_, err = await self.__process_in()
-					if err is not None:
-						raise err
+	async def process_channel_data(self, data):
+		channeldata = CHANNEL_PDU_HEADER.from_bytes(data)
+		#print('channeldata %s' % channeldata)
+		self.__buffer += channeldata.data
+		if CHANNEL_FLAG.CHANNEL_FLAG_LAST in channeldata.flags:
+			_, err = await self.__process_in()
+			if err is not None:
+				raise err
 
-		except asyncio.CancelledError:
-			return None, None
-		except Exception as e:
-			traceback.print_exc()
-			return None, e
-	
-	async def monitor_out(self):
+	async def fragment_and_send(self, data):
 		try:
-			while True:
-				data = await self.in_queue.get()
-				#print('monitor out! %s' % data)
-				if data.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
-					# data in, informing the server that our clipboard has changed
-					if data == self.__current_clipboard_data:
-						#print('Data already in cache!')
-						continue
-					
-					fmtl = CLIPRDR_FORMAT_LIST()
-					for fmtid in [CLIPBRD_FORMAT.CF_UNICODETEXT]: #CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_OEMTEXT
-						if CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES not in self.server_general_caps.generalFlags : #self.client_general_caps_flags:
-							name = CLIPRDR_LONG_FORMAT_NAME()
-							name.formatId = data.datatype
-						else:
-							name = CLIPRDR_SHORT_FORMAT_NAME()
-							name.formatId = data.datatype
-						fmtl.templist.append(name)
-					msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST, 0, fmtl)
-					await self.channel_data_out_q.put(msg)
-
-					self.__current_clipboard_data = data
-				
+			if len(data) < 16000:
+				if self.compression_needed is False:
+					flags = CHANNEL_FLAG.CHANNEL_FLAG_FIRST|CHANNEL_FLAG.CHANNEL_FLAG_LAST|CHANNEL_FLAG.CHANNEL_FLAG_SHOW_PROTOCOL
+					packet = CHANNEL_PDU_HEADER.serialize_packet(flags, data)
 				else:
-					logger.debug('Unhandled data type in! %s' % data.type)
-					continue
+					raise NotImplementedError('Compression not implemented!')
+			else:
+				raise NotImplementedError('Chunked send not implemented!')
+			
+			sec_hdr = None
+			if self.connection.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
 
+			await self.send_channel_data(packet, sec_hdr, None, None, False)
 
-		except asyncio.CancelledError:
-			return None, None
-
+			return True, False
 		except Exception as e:
 			traceback.print_exc()
-			return None, e
+			return None,e
+	
+
+	async def process_user_data(self, data):
+		#print('monitor out! %s' % data)
+		if data.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
+			# data in, informing the server that our clipboard has changed
+			if data == self.__current_clipboard_data:
+				return
+					
+			fmtl = CLIPRDR_FORMAT_LIST()
+			for fmtid in [CLIPBRD_FORMAT.CF_UNICODETEXT]: #CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_OEMTEXT
+				if CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES not in self.server_general_caps.generalFlags:
+					name = CLIPRDR_LONG_FORMAT_NAME()
+					name.formatId = data.datatype
+				else:
+					name = CLIPRDR_SHORT_FORMAT_NAME()
+					name.formatId = data.datatype
+				fmtl.templist.append(name)
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST, 0, fmtl)
+			await self.fragment_and_send(msg)
+
+			self.__current_clipboard_data = data
+				
+		else:
+			logger.debug('Unhandled data type in! %s' % data.type)

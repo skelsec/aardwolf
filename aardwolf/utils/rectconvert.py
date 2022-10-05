@@ -5,6 +5,7 @@ from PIL import Image
 
 from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 
+
 bpp_2_bytes = {
 	15: 2,
 	16: 2,

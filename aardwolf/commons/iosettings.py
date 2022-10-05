@@ -1,6 +1,7 @@
 from aardwolf.extensions.RDPECLIP.channel import RDPECLIPChannel
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
 from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
+from aardwolf.protocol.T125.extendedinfopacket import PERF
 
 class RDPIOSettings:
 	def __init__(self):
@@ -22,6 +23,9 @@ class RDPIOSettings:
 		self.video_bpp_max = 16 #max supported bpp
 		# all supported BPPs
 		self.video_bpp_supported = [15, 16, 24, 32]
+
+		#Performance booster flags
+		self.performance_flags = PERF.DISABLE_WALLPAPER | PERF.DISABLE_THEMING | PERF.DISABLE_CURSORSETTINGS | PERF.DISABLE_MENUANIMATIONS | PERF.DISABLE_FULLWINDOWDRAG
 		
 		# Keyboard settings
 		# Keyborad settings used by both RDP and VNC		

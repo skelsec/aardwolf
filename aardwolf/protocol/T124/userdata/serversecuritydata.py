@@ -1,6 +1,8 @@
 
 import io
-from aardwolf.protocol.T124.userdata.constants import *
+import enum
+
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE, ENCRYPTION_FLAG, ENCRYPTION_LEVEL
 from asn1crypto.x509 import Certificate
 
 class CERT_CHAIN_VERSION(enum.Enum):

@@ -5,9 +5,9 @@ from aardwolf.authentication.credssp.messages import *
 from aardwolf.protocol.T125.infopacket import TS_INFO_PACKET
 from aardwolf.protocol.T128.share import *
 from aardwolf.protocol.T128.security import *
-from aardwolf.protocol.T125.serverdemandactivepdu import *
-from aardwolf.protocol.T125.clientconfirmactivepdu import *
-from aardwolf.protocol.T125.inputeventpdu import *
+from aardwolf.protocol.T128.serverdemandactivepdu import *
+from aardwolf.protocol.T128.clientconfirmactivepdu import *
+from aardwolf.protocol.T128.inputeventpdu import *
 from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU
 import aardwolf.utils.rle
 

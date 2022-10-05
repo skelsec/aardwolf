@@ -2,7 +2,6 @@
 import enum
 import io
 from typing import List
-from aardwolf.protocol.T128.share import *
 from aardwolf.protocol.fastpath.palette import TS_UPDATE_PALETTE_DATA
 from aardwolf.protocol.fastpath.bitmap import TS_UPDATE_BITMAP_DATA
 from aardwolf.protocol.fastpath.pointer import TS_FP_LARGEPOINTERATTRIBUTE, TS_FP_CACHEDPOINTERATTRIBUTE, TS_FP_POINTERATTRIBUTE, TS_POINTERPOSATTRIBUTE, TS_FP_COLORPOINTERATTRIBUTE

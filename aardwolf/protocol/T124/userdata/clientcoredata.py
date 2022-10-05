@@ -1,6 +1,8 @@
 
 import io
-from aardwolf.protocol.T124.userdata.constants import *
+import enum
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE, COLOR_DEPTH, HIGH_COLOR_DEPTH, \
+	SUPPORTED_COLOR_DEPTH, CONNECTION_TYPE, RNS_UD_CS, ORIENTATION
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/8a36630c-9c8e-4864-9382-2ec9d6f368ca
