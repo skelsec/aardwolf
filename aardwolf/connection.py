@@ -13,16 +13,17 @@ from aardwolf import logger
 from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.commons.target import RDPTarget
-from aardwolf.commons.credential import RDPCredential, RDPCredentialsSecretType
+from asyauth.common.credentials import UniCredential
+from asyauth.common.constants import asyauthSecret, asyauthProtocol
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
-from aardwolf.network.tpkt import TPKTNetwork
 from aardwolf.network.x224 import X224Network
-from aardwolf.network.selector import NetworkSelector
+from asyauth.common.credentials.credssp import CREDSSPCredential
 
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
 from aardwolf.protocol.x224.server.connectionconfirm import RDP_NEG_RSP
 
-from aardwolf.protocol.pdu.input.keyboard import TS_UNICODE_KEYBOARD_EVENT, TS_KEYBOARD_EVENT, KBDFLAGS
+from aardwolf.protocol.pdu.input.keyboard import TS_KEYBOARD_EVENT, KBDFLAGS
+from aardwolf.protocol.pdu.input.unicode import TS_UNICODE_KEYBOARD_EVENT
 from aardwolf.protocol.pdu.input.mouse import PTRFLAGS, TS_POINTER_EVENT
 from aardwolf.protocol.pdu.capabilities import CAPSTYPE
 from aardwolf.protocol.pdu.capabilities.general import TS_GENERAL_CAPABILITYSET, OSMAJORTYPE, OSMINORTYPE, EXTRAFLAG
@@ -63,13 +64,18 @@ from aardwolf.protocol.T128.share import PDUTYPE, STREAM_TYPE, PDUTYPE2
 
 from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FASTPATH_FRAGMENT, FASTPATH_SEC, TS_FP_UPDATE
 from aardwolf.commons.queuedata import RDPDATATYPE, RDP_KEYBOARD_SCANCODE, RDP_KEYBOARD_UNICODE, RDP_MOUSE, RDP_VIDEO
-from aardwolf.commons.authbuilder import AuthenticatorBuilder
-from aardwolf.channels import Channel
+from aardwolf.channels import MCSChannel
 from aardwolf.commons.iosettings import RDPIOSettings
 
+from asysocks.unicomm.client import UniClient
+from asysocks.unicomm.common.connection import UniConnection
+from aardwolf.network.tpkt import TPKTPacketizer
+
+from aardwolf.network.tpkt import CredSSPPacketizer
+from asysocks.unicomm.common.packetizers import Packetizer
 
 class RDPConnection:
-	def __init__(self, target:RDPTarget, credentials:RDPCredential, iosettings:RDPIOSettings):
+	def __init__(self, target:RDPTarget, credentials:UniCredential, iosettings:RDPIOSettings):
 		"""RDP client connection object. After successful connection the two asynchronous queues named `ext_out_queue` and `ext_in_queue`
 		can be used to communicate with the remote server
 
@@ -90,10 +96,8 @@ class RDPConnection:
 		self.ext_out_queue = asyncio.Queue()
 		self.ext_in_queue = asyncio.Queue()
 
-
-		self.__tpkgnet = None
+		self.__connection:UniConnection = None
 		self._x224net = None
-		self.__transportnet = None #TCP/SSL/SOCKS etc.
 		self.__t125_ber_codec = None
 		self._t125_per_codec = None
 		self.__t124_codec = None
@@ -113,13 +117,11 @@ class RDPConnection:
 		self.__channel_task = {} #name -> channeltask
 
 		
-		self.__fastpath_reader_task = None
 		self.__external_reader_task = None
 		self.__x224_reader_task = None
 		self.client_x224_flags = 0
 		self.client_x224_supported_protocols = self.iosettings.supported_protocols 
 		self.cryptolayer:RDPCryptoLayer = None
-		self.__fastpath_in_queue = None
 		self.__desktop_buffer = None
 		self.desktop_buffer_has_data = False
 
@@ -186,17 +188,8 @@ class RDPConnection:
 			if self.__external_reader_task is not None:
 				self.__external_reader_task.cancel()
 			
-			if self.__fastpath_reader_task is not None:
-				self.__fastpath_reader_task.cancel()
-			
 			if self.__x224_reader_task is not None:
 				self.__x224_reader_task.cancel()
-			
-			if self._x224net is not None:
-				await self._x224net.disconnect()
-
-			if self.__tpkgnet is not None:
-				await self.__tpkgnet.disconnect()
 			
 			return True, None
 		except Exception as e:
@@ -217,48 +210,33 @@ class RDPConnection:
 			Tuple[bool, Exception]: _description_
 		"""
 		try:
-			self.__fastpath_in_queue = asyncio.Queue()
-			self.__transportnet, err = await NetworkSelector.select(self.target)
-			if err is not None:
-				raise err
 
-			# starting lower-layer transports 
-			_, err = await self.__transportnet.connect()
-			if err is not None:
-				raise err
-
-			# TPKT network handles both TPKT and FASTPATH packets
-			# This object is also capable to dynamically switch 
-			# to SSL/TLS when needed (without reconnecting)
-			self.__tpkgnet = TPKTNetwork(self.__transportnet)
-			_, err = await self.__tpkgnet.run()
-			if err is not None:
-				raise err
-			
-
-			self.__fastpath_reader_task = asyncio.create_task(self.__fastpath_reader())
+			packetizer = TPKTPacketizer()
+			client = UniClient(self.target, packetizer)
+			self.__connection = await client.connect()
 
 			# X224 channel is on top of TPKT, performs the initial negotiation
 			# between the server and our client (restricted admin mode, authentication methods etc)
 			# are set here
-			self._x224net = X224Network(self.__tpkgnet)
-			_, err = await self._x224net.run()
-			if err is not None:
-				raise err
-			
+			self._x224net = X224Network(self.__connection)
 			if self.client_x224_supported_protocols is None and self.credentials is not None:
-				if self.credentials.secret is not None and self.credentials.secret_type not in [RDPCredentialsSecretType.PASSWORD, RDPCredentialsSecretType.PWPROMPT, RDPCredentialsSecretType.PWHEX, RDPCredentialsSecretType.PWB64]:
-					# user provided some secret but it's not a password
-					# here we request restricted admin mode
-					self.client_x224_flags = NEG_FLAGS.RESTRICTED_ADMIN_MODE_REQUIRED
-					self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID
-				elif self.credentials.secret is None and self.credentials.username is None:
+				if self.credentials.protocol in [asyauthProtocol.NTLM, asyauthProtocol.KERBEROS]:
+					if self.credentials.secret is not None and self.credentials.stype not in [asyauthSecret.PASSWORD, asyauthSecret.PWPROMPT, asyauthSecret.PWHEX, asyauthSecret.PWB64]:
+						# user provided some secret but it's not a password
+						# here we request restricted admin mode
+						self.client_x224_flags = NEG_FLAGS.RESTRICTED_ADMIN_MODE_REQUIRED
+						self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID
+					else:
+						self.client_x224_flags = 0
+						self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL | SUPP_PROTOCOLS.HYBRID_EX | SUPP_PROTOCOLS.HYBRID
+				
+				elif self.credentials.stype == asyauthSecret.NONE: #and self.credentials.username is None:
 					# not sending any passwords, hoping HYBRID is not required
 					self.client_x224_flags = 0
 					self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL
 				else:
 					self.client_x224_flags = 0
-					self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL | SUPP_PROTOCOLS.HYBRID_EX | SUPP_PROTOCOLS.HYBRID
+					self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL
 			
 			logger.debug('Client protocol flags: %s' % self.client_x224_flags)
 			logger.debug('Client protocol offer: %s' % self.client_x224_supported_protocols)
@@ -277,12 +255,8 @@ class RDPConnection:
 				self.x224_protocol = self.x224_connection_reply.selectedProtocol
 				self.x224_flag = self.x224_connection_reply.flags
 				logger.debug('Server selected protocol: %s' % self.x224_protocol)
-				#print(self.x224_flag)
 				if SUPP_PROTOCOLS.SSL in self.x224_protocol or SUPP_PROTOCOLS.HYBRID in self.x224_protocol or SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
-					from aardwolf.transport.ssl import SSLClientTunnel
-					_, err = await self.__tpkgnet.switch_transport(SSLClientTunnel)
-					if err is not None:
-						raise err
+					await self.__connection.wrap_ssl()
 
 				# if the server expects HYBRID/HYBRID_EX authentication we do that here
 				# This is basically credSSP
@@ -290,6 +264,9 @@ class RDPConnection:
 					_, err = await self.credssp_auth()
 					if err is not None:
 						raise err
+					
+					#switching back to tpkt
+					self.__connection.change_packetizer(TPKTPacketizer())
 
 			else:
 				# old RDP protocol is used
@@ -304,6 +281,7 @@ class RDPConnection:
 
 			# All steps below are required as stated in the following 'documentation'
 			# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/1d263f84-6153-4a16-b329-8770be364e1b
+			logger.debug('Establish channels...')
 			_, err = await self.__establish_channels()
 			if err is not None:
 				raise err
@@ -369,62 +347,44 @@ class RDPConnection:
 				if self.credentials is None:
 					raise Exception('No auth API nor credentials were supplied!')
 				
-				self.authapi = AuthenticatorBuilder.to_credssp(self.credentials, self.target)
-			# credSSP authentication exchange happens on the 'wire' directly 
-			# without the use of TPKT or X224 so we have to suspend those layers
-			_, err = await self.__tpkgnet.suspend_read()
-			if err is not None:
-				raise err
+				
+				self.authapi = CREDSSPCredential([self.credentials]).build_context()
 
-			# credSSP auth requires knowledge of the server's public key 
-			pubkey = await self.__tpkgnet.transport.get_server_pubkey()
+			self.__connection.change_packetizer(CredSSPPacketizer())
+
+			certificate = self.__connection.get_peer_certificate()
 
 			# credSSP auth happends here
 			token = None
-			data, to_continue, err = await self.authapi.authenticate(token, flags = None, pubkey = pubkey)
+			data, to_continue, err = await self.authapi.authenticate(token, flags = None, certificate = certificate, spn=self.target.to_target_string())
 			if err is not None:
 				raise err
 
-			await self.__tpkgnet.transport.out_queue.put(data)
+			await self.__connection.write(data)
 			
 			for _ in range(10):
-				token, err = await self.__tpkgnet.transport.in_queue.get()
-				if err is not None:
-					raise err
-
-				data, to_continue, err = await self.authapi.authenticate(token, flags = None, pubkey = pubkey)
+				token = await self.__connection.read_one()
+				data, to_continue, err = await self.authapi.authenticate(token, flags = None, certificate = certificate, spn=self.target.to_target_string())
 				if err is not None:
 					raise err
 				
 				if to_continue is False:
 					# credSSP auth finished, flushing remaining data
 					if data is not None:
-						await self.__tpkgnet.transport.out_queue.put(data)
+						await self.__connection.write(data)
 					
 					# if HYBRID_EX auth was selected by the server, the server MUST send
 					# an extra packet informing us if the credSSP auth was successful or not
 					if SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
-						authresult_raw, err = await self.__tpkgnet.transport.in_queue.get()
-						if err is not None:
-							raise err
-						
+						self.__connection.change_packetizer(Packetizer())
+						authresult_raw = await self.__connection.read_one()
 						authresult = int.from_bytes(authresult_raw, byteorder='little', signed=False)
 						#print('Early User Authorization Result PDU %s' % authresult)
 						if authresult == 5:
 							raise Exception('Authentication failed! (early user auth)')
-
-
-					
-					_, err = await self.__tpkgnet.conitnue_read()
-					if err is not None:
-						raise err
 					return True, None
 				
-				await self.__tpkgnet.transport.out_queue.put(data)
-
-			_, err = await self.__tpkgnet.conitnue_read()
-			if err is not None:
-				raise err
+				await self.__connection.write(data)
 
 		except Exception as e:
 			return None, e
@@ -585,16 +545,11 @@ class RDPConnection:
 			}
 
 			conf_create_req = self.__t125_ber_codec.encode('ConnectMCSPDU',('connect-initial', initialconnect))
-			conf_create_req = bytes(conf_create_req)
-			#print(conf_create_req)
-
-			await self._x224net.out_queue.put(conf_create_req)
-			_, response_raw, err = await self._x224net.in_queue.get()
-			if err is not None:
-				raise err
+			await self._x224net.write(bytes(conf_create_req))
+			
+			response_raw = await self._x224net.read()			
 			server_res_raw = response_raw.data
 			server_res_t125 = self.__t125_ber_codec.decode('ConnectMCSPDU', server_res_raw)
-			#print(server_res_t125)
 			if server_res_t125[0] != 'connect-response':
 				raise Exception('Unexpected response! %s' % server_res_t125)
 			if server_res_t125[1]['result'] != 'rt-successful':
@@ -611,12 +566,12 @@ class RDPConnection:
 			data = server_res_t124['connectPDU']
 			m = server_res_raw.find(data)
 			remdata = server_res_raw[m+len(data):]
-
+			
 			# weirdness ends here... FOR NOW!
 
 			server_connect_pdu_raw = self.__t124_codec.decode('ConnectGCCPDU', server_res_t124['connectPDU']+remdata)
 			self.__server_connect_pdu = TS_SC.from_bytes(server_connect_pdu_raw[1]['userData'][0]['value']).serverdata
-
+			
 			logger.log(1, 'Server capability set: %s' % self.__server_connect_pdu)
 
 			# populating channels
@@ -625,7 +580,7 @@ class RDPConnection:
 				self.__joined_channels[name].channel_id = scnet.channelIdArray[i]
 				self.__channel_id_lookup[scnet.channelIdArray[i]] = self.__joined_channels[name]
 
-			self.__joined_channels['MCS'] = Channel('MCS') #TODO: options?
+			self.__joined_channels['MCS'] = MCSChannel() #TODO: options?
 			self.__joined_channels['MCS'].channel_id = scnet.MCSChannelId
 			self.__channel_id_lookup[scnet.MCSChannelId] = self.__joined_channels['MCS']
 
@@ -639,22 +594,21 @@ class RDPConnection:
 			# the parser could not decode nor encode this data correctly.
 			# therefore we are sending these as bytes. it's static 
 			# (even according to docu)
-			await self._x224net.out_queue.put(bytes.fromhex('0400010001'))
+			await self._x224net.write(bytes.fromhex('0400010001'))
 			return True, None
 		except Exception as e:
 			return None, e
 	
 	async def __attach_user(self):
 		try:
-			await self._x224net.out_queue.put(bytes.fromhex('28'))
-			_, response, err = await self._x224net.in_queue.get()
-			if err is not None:
-				raise err
+			request = self._t125_per_codec.encode('DomainMCSPDU', ('attachUserRequest', {}))
+			await self._x224net.write(request)
+			response = await self._x224net.read()
 			response_parsed = self._t125_per_codec.decode('DomainMCSPDU', response.data)
 			if response_parsed[0] != 'attachUserConfirm':
-				raise Exception('Unexpected response! %s' % response_parsed)
+				raise Exception('Unexpected response! %s' % response_parsed[0])
 			if response_parsed[1]['result'] != 'rt-successful':
-				raise Exception('Server returned error! %s' % response_parsed)
+				raise Exception('Server returned error! %s' % response_parsed[0])
 			self._initiator = response_parsed[1]['initiator']
 			
 			return True, None
@@ -665,10 +619,8 @@ class RDPConnection:
 		try:
 			for name in self.__joined_channels:
 				joindata = self._t125_per_codec.encode('DomainMCSPDU', ('channelJoinRequest', {'initiator': self._initiator, 'channelId': self.__joined_channels[name].channel_id}))
-				await self._x224net.out_queue.put(bytes(joindata))
-				_, response, err = await self._x224net.in_queue.get()
-				if err is not None:
-					raise err
+				await self._x224net.write(bytes(joindata))
+				response = await self._x224net.read()
 				
 				x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
 				if x[0] != 'channelJoinConfirm':
@@ -770,7 +722,6 @@ class RDPConnection:
 					raise Exception('License error! tokenInhibitConfirm:result not successful')
 			else:
 				raise Exception('tokenInhibitConfirm did not show up in reply!')
-			#print('license ok')
 
 			return True, None
 		except Exception as e:
@@ -791,22 +742,16 @@ class RDPConnection:
 				data_start_offset = 4
 
 			data = data[data_start_offset:]
-			# TEST
 			shc = TS_SHARECONTROLHEADER.from_bytes(data)
 			if shc.pduType != PDUTYPE.DEMANDACTIVEPDU:
 				raise Exception('Unexpected reply! Expected DEMANDACTIVEPDU got "%s" instead!' % shc.pduType.name)
-
-			#### TEST END
 			
 			res = TS_DEMAND_ACTIVE_PDU.from_bytes(data)
 			for cap in res.capabilitySets:
-				#print(cap)
 				if cap.capabilitySetType == CAPSTYPE.GENERAL:
 					cap = typing.cast(TS_GENERAL_CAPABILITYSET, cap.capability)
 					if EXTRAFLAG.ENC_SALTED_CHECKSUM in cap.extraFlags and self.cryptolayer is not None:
 						self.cryptolayer.use_encrypted_mac = True
-			#print(res)
-			#print('================================== SERVER IN ENDS HERE ================================================')
 			
 			caps = []
 			# now we send our capabilities
@@ -980,18 +925,18 @@ class RDPConnection:
 		# dont activate it before this!!!!
 		
 		try:
-			while True:
-				is_fastpath, response, err = await self._x224net.in_queue.get()
-				if err is not None:
-					raise err
+			self.__connection.packetizer.packetizer_control("X224")
+			
+			async for is_fastpath, response in self.__connection.read():
+				#is_fastpath, response, err = await self._x224net.in_queue.get()
+				#if err is not None:
+				#	raise err
 
 				if response is None:
 					raise Exception('Server terminated the connection!')
 				
 				if is_fastpath is False:
-					#print('__x224_reader data in -> %s' % response.data)
 					x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
-					#print('__x224_reader decoded data in -> %s' % str(x))
 					if x[0] != 'sendDataIndication':
 						#print('Unknown packet!')
 						continue
@@ -1013,7 +958,7 @@ class RDPConnection:
 									print('Decrypted data: %s' % data)
 									print('Original MAC  : %s' % sec_hdr.dataSignature)
 									print('Calculated MAC: %s' % mac)
-					await self.__channel_id_lookup[x[1]['channelId']].raw_in_queue.put((data, None))
+					await self.__channel_id_lookup[x[1]['channelId']].process_channel_data(data)
 				else:
 					#print('fastpath data in -> %s' % len(response))
 					fpdu = TS_FP_UPDATE_PDU.from_bytes(response)
@@ -1032,7 +977,7 @@ class RDPConnection:
 							print('Calculated MAC: %s' % mac)
 							raise Exception('Signature mismatch')
 						fpdu.fpOutputUpdates = TS_FP_UPDATE.from_bytes(data)
-					await self.__fastpath_in_queue.put((fpdu, None))
+					await self.__process_fastpath(fpdu)
 		
 		except asyncio.CancelledError:
 			return None, None
@@ -1042,7 +987,7 @@ class RDPConnection:
 		finally:
 			await self.terminate()
 
-	async def __fastpath_reader(self):
+	async def __process_fastpath(self, fpdu):
 		# Fastpath was introduced to the RDP specs to speed up data transmission
 		# by reducing 4 useless layers from the traffic.
 		# Transmission on this channel starts immediately after connection sequence
@@ -1050,42 +995,28 @@ class RDPConnection:
 		# interesting note: it seems newer servers (>=win2016) only support this protocol of sending
 		# high bandwith traffic. If you disable fastpath (during connection sequence) you won't
 		# get images at all
+		
 		try:
-			while True:
-				fpdu, err = await self.__fastpath_in_queue.get()
-				if err is not None:
-					raise err
-				if fpdu is None:
-					raise Exception('Server terminated the connection!')
-
-				try:
-					if fpdu.fpOutputUpdates.fragmentation != FASTPATH_FRAGMENT.SINGLE:
-						print('WARNING! FRAGMENTATION IS NOT IMPLEMENTED! %s' % fpdu.fpOutputUpdates.fragmentation)
-					if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.BITMAP:
-						for bitmapdata in fpdu.fpOutputUpdates.update.rectangles:
-							self.desktop_buffer_has_data = True
-							res, image = RDP_VIDEO.from_bitmapdata(bitmapdata, self.iosettings.video_out_format)
-							self.__desktop_buffer.paste(image, [res.x, res.y, res.x+res.width, res.y+res.height])
-							await self.ext_out_queue.put(res)
-					#else:
-					#	#print(fpdu.fpOutputUpdates.updateCode)
-					#	#if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.CACHED:
-					#	#	print(fpdu.fpOutputUpdates)
-					#	#if fpdu.fpOutputUpdates.updateCode not in [FASTPATH_UPDATETYPE.CACHED, FASTPATH_UPDATETYPE.POINTER]:
-					#	#	print('notbitmap %s' % fpdu.fpOutputUpdates.updateCode.name)
-				except Exception as e:
-					# the decoder is not perfect yet, so it's better to keep this here...
-					traceback.print_exc()
-					return
-				
-		except asyncio.CancelledError:
-			return None, None
-
+			if fpdu.fpOutputUpdates.fragmentation != FASTPATH_FRAGMENT.SINGLE:
+				print('WARNING! FRAGMENTATION IS NOT IMPLEMENTED! %s' % fpdu.fpOutputUpdates.fragmentation)
+			if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.BITMAP:
+				for bitmapdata in fpdu.fpOutputUpdates.update.rectangles:
+					self.desktop_buffer_has_data = True
+					res, image = RDP_VIDEO.from_bitmapdata(bitmapdata, self.iosettings.video_out_format)
+					self.__desktop_buffer.paste(image, [res.x, res.y, res.x+res.width, res.y+res.height])
+					await self.ext_out_queue.put(res)
+			#else:
+			#	#print(fpdu.fpOutputUpdates.updateCode)
+			#	#if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.CACHED:
+			#	#	print(fpdu.fpOutputUpdates)
+			#	#if fpdu.fpOutputUpdates.updateCode not in [FASTPATH_UPDATETYPE.CACHED, FASTPATH_UPDATETYPE.POINTER]:
+			#	#	print('notbitmap %s' % fpdu.fpOutputUpdates.updateCode.name)
 		except Exception as e:
+			# the decoder is not perfect yet, so it's better to keep this here...
 			traceback.print_exc()
-			return None, e
-		finally:
-			await self.terminate()
+			return
+	
+
 
 	async def send_key_virtualkey(self, vk, is_pressed, is_extended, scancode_hint = None, modifiers = VK_MODIFIERS(0)):
 		try:
@@ -1255,7 +1186,7 @@ class RDPConnection:
 					if 'cliprdr' not in self.__joined_channels:
 						logger.debug('Got clipboard data but no clipboard channel setup!')
 						continue
-					await self.__joined_channels['cliprdr'].in_queue.put(indata)
+					await self.__joined_channels['cliprdr'].process_user_data(indata)
 
 		except asyncio.CancelledError:
 			return None, None
@@ -1267,8 +1198,6 @@ class RDPConnection:
 	
 	async def handle_out_data(self, dataobj, sec_hdr, datacontrol_hdr, sharecontrol_hdr, channel_id, is_fastpath):
 		try:
-			#while True:
-			#	dataobj, sec_hdr, datacontrol_hdr, sharecontrol_hdr, channel_id, is_fastpath  = await self.data_in_queue.get()
 			if is_fastpath is False:
 				#print('Sending data on channel "%s(%s)"' % (self.name, self.channel_id))
 				data = dataobj.to_bytes()
@@ -1316,7 +1245,7 @@ class RDPConnection:
 					'userData': userdata
 				}
 				userdata_wrapped = self._t125_per_codec.encode('DomainMCSPDU', ('sendDataRequest', data_wrapper))
-				await self._x224net.out_queue.put(userdata_wrapped)
+				await self._x224net.write(userdata_wrapped)
 				
 			else:
 				raise NotImplementedError("Fastpath output is not yet implemented")
@@ -1329,12 +1258,12 @@ class RDPConnection:
 	
 async def amain():
 	try:
-		from aardwolf.commons.url import RDPConnectionURL
+		from aardwolf.commons.factory import RDPConnectionFactory
 		from aardwolf.commons.iosettings import RDPIOSettings
 
 		iosettings = RDPIOSettings()
 		url = 'rdp+ntlm-password://TEST\\Administrator:Passw0rd!1@10.10.10.103'
-		rdpurl = RDPConnectionURL(url)
+		rdpurl = RDPConnectionFactory.from_url(url)
 		conn = rdpurl.get_connection(iosettings)
 		_, err = await conn.connect()
 		if err is not None:

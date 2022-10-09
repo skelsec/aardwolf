@@ -10,16 +10,22 @@
 import ipaddress
 import enum
 import copy
-from aardwolf.commons.proxy import RDPProxy
+from typing import List
+from urllib.parse import urlparse, parse_qs
+
+from asysocks.unicomm.common.target import UniTarget, UniProto
+from asysocks.unicomm.common.proxy import UniProxyProto, UniProxyTarget
 
 class RDPConnectionDialect(enum.Enum):
 	RDP = 'RDP'
 	VNC = 'VNC'
 
-class RDPConnectionProtocol(enum.Enum):
-	TCP = 'TCP'
+rdpurlconnection_param2var = {
+	'RDP' : UniProto.CLIENT_TCP,
+	'VNC' : UniProto.CLIENT_TCP,
+}
 
-class RDPTarget:
+class RDPTarget(UniTarget):
 	"""
 	"""
 	def __init__(
@@ -30,20 +36,11 @@ class RDPTarget:
 			timeout:int = 1, 
 			dc_ip:int=None, 
 			domain:str = None, 
-			proxy:RDPProxy = None, 
-			protocol:RDPConnectionProtocol = RDPConnectionProtocol.TCP, 
-			serverip = None, 
-			dialect:RDPConnectionDialect = RDPConnectionDialect.RDP):
-		
-		self.ip = ip
-		self.port = port
-		self.hostname = hostname
-		self.timeout = timeout
-		self.dc_ip = dc_ip
-		self.domain = domain
-		self.proxy = proxy
-		self.protocol = protocol
-		self.serverip = serverip
+			proxies:List[UniProxyTarget] = None, 
+			protocol:UniProto = UniProto.CLIENT_TCP, 
+			dialect:RDPConnectionDialect = RDPConnectionDialect.RDP,
+			dns:str = None):
+		UniTarget.__init__(self, ip, port, protocol, timeout, hostname = hostname, proxies = proxies, domain = domain, dc_ip = dc_ip, dns=dns)
 		self.dialect = dialect
 		if self.dialect == RDPConnectionDialect.VNC:
 			self.port = 5900
@@ -61,37 +58,48 @@ class RDPTarget:
 			domain = self.domain, 
 			proxy = copy.deepcopy(self.proxy),
 			protocol = self.protocol,
-			serverip = self.serverip,
-			dialect = self.dialect
+			dialect = self.dialect,
+			dns=self.dns
 		)
 		return t
-	
+
 	@staticmethod
-	def from_connection_string(s, is_rdp = True):
-		port = 3389
-		if is_rdp is False:
-			port = 5900
+	def from_url(connection_url):
+		url_e = urlparse(connection_url)
+		schemes = url_e.scheme.upper().split('+')
+		connection_tags = schemes[0].split('-')
+		if len(connection_tags) > 1:
+			dialect = RDPConnectionDialect(connection_tags[0])
+			protocol = rdpurlconnection_param2var[connection_tags[1]]
+		else:
+			dialect = RDPConnectionDialect(connection_tags[0])
+			protocol = UniProto.CLIENT_TCP
 		
-		dc = None
+		if url_e.port:
+			port = url_e.port
+		elif dialect == RDPConnectionDialect.RDP:
+			port = 3389
+		elif dialect == RDPConnectionDialect.VNC:
+			port = 5800
+		else:
+			raise Exception('Port must be provided!')
 		
-		_, target = s.rsplit('@', 1)
-		if target.find('/') != -1:
-			target, dc = target.split('/')
-			
-		if target.find(':') != -1:
-			target, port = target.split(':')
-			
-		st = RDPTarget()
-		st.port = port
-		st.dc_ip = dc
-		st.domain, _ = s.split('/', 1)
+		unitarget, extraparams = UniTarget.from_url(connection_url, protocol, port)
+
+		target = RDPTarget(
+			ip = unitarget.ip,
+			port = unitarget.port,
+			hostname = unitarget.hostname,
+			timeout = unitarget.timeout,
+			dc_ip = unitarget.dc_ip,
+			domain = unitarget.domain,
+			proxies = unitarget.proxies,
+			protocol = unitarget.protocol,
+			dns = unitarget.dns,
+			dialect = dialect,
+		)
 		
-		try:
-			st.ip = str(ipaddress.ip_address(target))
-		except:
-			st.hostname = target
-	
-		return st
+		return target
 		
 	def get_ip(self):
 		if not self.ip and not self.hostname:

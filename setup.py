@@ -1,24 +1,16 @@
 from setuptools import setup, find_packages
-from distutils.core import setup, Extension
+from setuptools_rust import Binding, RustExtension
 import re
-import platform
 
 VERSIONFILE="aardwolf/_version.py"
 verstrline = open(VERSIONFILE, "rt").read()
 VSRE = r"^__version__ = ['\"]([^'\"]*)['\"]"
 mo = re.search(VSRE, verstrline, re.M)
 if mo:
-    verstr = mo.group(1)
+	verstr = mo.group(1)
 else:
-    raise RuntimeError("Unable to find version string in %s." % (VERSIONFILE,))
-
-rle_module = Extension('rle',
-	define_macros = [('MAJOR_VERSION', '1'), ('MINOR_VERSION', '0')],
-	include_dirs = ['/usr/local/include'],
-	library_dirs = ['/usr/local/lib'],
-	sources = ['aardwolf/utils/rle/rle.c']
-)
-
+	raise RuntimeError("Unable to find version string in %s." % (VERSIONFILE,))
+print(find_packages())
 setup(
 	# Application name:
 	name="aardwolf",
@@ -48,23 +40,22 @@ setup(
 	# long_description=open("README.txt").read(),
 	python_requires='>=3.7',
 	
-	ext_modules = [rle_module],
+	rust_extensions=[RustExtension("librlers", path= "aardwolf/utils/rlers/Cargo.toml", binding=Binding.PyO3)],
 
 
 	install_requires=[
-		'minikerberos>=0.2.20',
-		'winsspi>=0.0.9',
-		'asysocks>=0.1.7',
+		'unicrypto>=0.0.9',
+		'asyauth>=0.0.5',
+		'asysocks>=0.2.2',
+		'minikerberos>=0.3.3',
 		'tqdm',
 		'colorama',
 		'asn1crypto',
 		'asn1tools',
 		'pyperclip>=1.8.2',
-		'arc4>=0.0.4', #faster than cryptodome
-		'Pillow>=9.0.0',
-		'unicrypto>=0.0.4',
+		'arc4>=0.3.0', #faster than cryptodome
+		'Pillow>=9.0.0',		
 	],
-	
 	
 	classifiers=[
 		"Programming Language :: Python :: 3.8",
@@ -72,10 +63,7 @@ setup(
 	],
 	entry_points={
 		'console_scripts': [
-			'aardpcapsscan = aardwolf.examples.aardpcapscan:main',
-			'aardploginscan = aardwolf.examples.aardploginscan:main',
-			'aardpscreenshot = aardwolf.examples.aardpscreenshot:main',
+			'ardpscan = aardwolf.examples.scanners.__main__:main',
 		],
-
 	}
 )
