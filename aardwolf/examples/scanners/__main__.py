@@ -45,7 +45,7 @@ Scanner types (-s param):
 		print('No targets defined!')
 		return
 	
-	logger.setLevel(logging.DEBUG)
+	logger.setLevel(logging.INFO)
 
 	iosettings = RDPIOSettings()
 	iosettings.channels = []
