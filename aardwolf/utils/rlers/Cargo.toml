@@ -1,0 +1,23 @@
+[package]
+name = "rlers"
+edition = "2021"
+version = "0.0.1"
+authors = ["Sylvain Peyrefitte <citronneur@gmail.com>", "Tamas Jos"]
+description = "rust RLE decoder with Python bindings"
+repository = ""
+readme = ""
+keywords = ["rdp", "security", "network", "windows"]
+categories = ["network"]
+license = "MIT"
+documentation = ""
+
+[lib]
+name = "rlers"
+crate-type = ["cdylib"]
+path = "src/rle.rs"
+
+[dependencies]
+byteorder = "^1.3"
+num_enum = "0.4.3"
+lazy_static = "1.4.0"
+pyo3 = { version = "0.16.5", features = ["extension-module"] }

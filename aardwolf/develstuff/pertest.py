@@ -9,7 +9,6 @@ from aardwolf.protocol.T128.serverdemandactivepdu import *
 from aardwolf.protocol.T128.clientconfirmactivepdu import *
 from aardwolf.protocol.T128.inputeventpdu import *
 from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU
-import aardwolf.utils.rle
 
 if __name__ == '__main__':
 	# USERDATA

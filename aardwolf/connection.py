@@ -571,7 +571,7 @@ class RDPConnection:
 
 			server_connect_pdu_raw = self.__t124_codec.decode('ConnectGCCPDU', server_res_t124['connectPDU']+remdata)
 			self.__server_connect_pdu = TS_SC.from_bytes(server_connect_pdu_raw[1]['userData'][0]['value']).serverdata
-
+			
 			logger.log(1, 'Server capability set: %s' % self.__server_connect_pdu)
 
 			# populating channels
