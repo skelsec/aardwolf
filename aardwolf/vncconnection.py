@@ -38,7 +38,7 @@ try:
 except ImportError:
 	logger.debug('No Qt installed! Converting to qt will not work')
 
-import rle
+import librlers
 
 # https://datatracker.ietf.org/doc/html/rfc6143
 
@@ -648,7 +648,6 @@ class VNCConnection:
 
 	async def __reader_loop(self):
 		try:
-			ctr = 0
 			while True:
 				msgtype = await self.__reader.readexactly(1)
 				msgtype = ord(msgtype)
@@ -663,9 +662,8 @@ class VNCConnection:
 						if encoding == RAW_ENCODING:
 							try:
 								data = await self.__reader.readexactly(width*height*self.bypp)
-								image = bytes(width * height * self.bypp)
-								rle.mask_rgbx(image, data)
-								image = Image.frombytes('RGBA', [width, height], image)
+								data = librlers.mask_rgbx(data)
+								image = Image.frombytes('RGBA', [width, height], bytes(data))
 								await self.__send_rect(x,y,width, height, image)
 							except Exception as e:
 								traceback.print_exc()
@@ -697,8 +695,8 @@ class VNCConnection:
 									data = await self.__reader.readexactly(subrect_size)
 									raw_data += data
 								
-								raw_out = bytes(width*height*self.bypp)
-								rle.decode_rre(raw_out, raw_data, width, height, self.bypp)
+								raw_out = librlers.decode_rre(raw_data, width, height, self.bypp)
+								raw_out = bytes(raw_out)
 								
 								rect = Image.frombytes('RGBA', [width, height], raw_out)
 								await self.__send_rect(x,y, width, height, rect)
@@ -780,6 +778,8 @@ class VNCConnection:
 	async def set_encodings(self, list_of_encodings = [2, 1, 0]):
 		"""Sends a setencoding message to the server, indicating the types of image encodings we support"""
 		try:
+			if list_of_encodings is None:
+				list_of_encodings = [2, 1, 0]
 			enc_encodings = b''
 			for encoding in list_of_encodings:
 				enc_encodings += encoding.to_bytes(4, byteorder = 'big', signed = True)

@@ -1,24 +1,16 @@
 from setuptools import setup, find_packages
-from distutils.core import setup, Extension
+from setuptools_rust import Binding, RustExtension
 import re
-import platform
 
 VERSIONFILE="aardwolf/_version.py"
 verstrline = open(VERSIONFILE, "rt").read()
 VSRE = r"^__version__ = ['\"]([^'\"]*)['\"]"
 mo = re.search(VSRE, verstrline, re.M)
 if mo:
-    verstr = mo.group(1)
+	verstr = mo.group(1)
 else:
-    raise RuntimeError("Unable to find version string in %s." % (VERSIONFILE,))
-
-rle_module = Extension('rle',
-	define_macros = [('MAJOR_VERSION', '1'), ('MINOR_VERSION', '0')],
-	include_dirs = ['/usr/local/include'],
-	library_dirs = ['/usr/local/lib'],
-	sources = ['aardwolf/utils/rle/rle.c']
-)
-
+	raise RuntimeError("Unable to find version string in %s." % (VERSIONFILE,))
+print(find_packages())
 setup(
 	# Application name:
 	name="aardwolf",
@@ -48,7 +40,7 @@ setup(
 	# long_description=open("README.txt").read(),
 	python_requires='>=3.7',
 	
-	ext_modules = [rle_module],
+	rust_extensions=[RustExtension("librlers", path= "aardwolf/utils/rlers/Cargo.toml", binding=Binding.PyO3)],
 
 
 	install_requires=[
@@ -64,7 +56,6 @@ setup(
 		'arc4>=0.3.0', #faster than cryptodome
 		'Pillow>=9.0.0',		
 	],
-	
 	
 	classifiers=[
 		"Programming Language :: Python :: 3.8",
