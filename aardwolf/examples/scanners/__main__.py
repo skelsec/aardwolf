@@ -23,19 +23,19 @@ async def amain():
 
 	scannertpes_usage = '\r\nall: Runs all scanners\r\n'
 	for k in rdpscan_options:
-		scannertpes_usage += '%s: %s\r\n' % (k, rdpscan_options[k][1])
+		scannertpes_usage += '    %s: %s\r\n' % (k, rdpscan_options[k][1])
 	
 	usage = """
 Scanner types (-s param):
-	%s
-"""% (scannertpes_usage,)
+    %s
+"""% scannertpes_usage
 
 	parser = argparse.ArgumentParser(description='RDP scanner', usage=usage)
 	parser.add_argument('-w', '--worker-count', type=int, default=100, help='Parallell count')
 	parser.add_argument('-t', '--timeout', type=int, default=10, help='Timeout for each connection')
 	parser.add_argument('--no-progress', action='store_false', help='Disable progress bar')
 	parser.add_argument('-o', '--out-file', help='Output file path.')
-	parser.add_argument('-s', '--scan', nargs='+', required=True, help='Scanner type')
+	parser.add_argument('-s', '--scan', action='append', required=True, help='Scanner type')
 	parser.add_argument('-e', '--errors', action='store_true', help='Includes errors in output. It will mess up the formatting!')
 	parser.add_argument('url', help = 'Connection string in URL format')
 	parser.add_argument('targets', nargs='*', help = 'Hostname or IP address or file with a list of targets')
