@@ -50,7 +50,7 @@ As usual the scripts take the target/scredentials in URL format. Below some exam
  VNC client with VNC authentication using password `admin:aa` connecting to RDP server `10.10.10.103`. Note that if the password contains `:` char you will have to prepend the password with `:`
 
 # Kudos
- - Citronneur's ([@awakecoding](https://twitter.com/citronneur)) [`rdpy`](https://github.com/citronneur/rdpy). The decompression code and the QT image magic was really valuable.
+ - Sylvain Peyrefitte ([@citronneur](https://twitter.com/citronneur)) [`rdpy`](https://github.com/citronneur/rdpy). The decompression code and the QT image magic was really valuable.
  - Marc-André Moreau ([@awakecoding](https://twitter.com/awakecoding)) for providing suggestions on fixes
 
 
