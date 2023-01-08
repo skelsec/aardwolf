@@ -111,6 +111,7 @@ class CLIPRDR_SHORT_FORMAT_NAME:
 		self.formatId:CLIPBRD_FORMAT = None
 		self.formatName:str = '' #always 32 bytes total, truncated if need be
 		self.encoding = encoding
+		self.clpfmt = None #stored for unknown data formats
 
 	def to_bytes(self):
 		t = self.formatId.value.to_bytes(4, byteorder='little', signed=False)
@@ -128,7 +129,11 @@ class CLIPRDR_SHORT_FORMAT_NAME:
 	@staticmethod
 	def from_buffer(buff: io.BytesIO, encoding:str='utf-16-le'):
 		msg = CLIPRDR_SHORT_FORMAT_NAME(encoding)
-		msg.formatId = CLIPBRD_FORMAT(int.from_bytes(buff.read(4), byteorder='little', signed=False))
+		msg.clpfmt = int.from_bytes(buff.read(4), byteorder='little', signed=False)
+		try:
+			msg.formatId = CLIPBRD_FORMAT(msg.clpfmt)
+		except:
+			msg.formatId = CLIPBRD_FORMAT.UNKNOWN
 		msg.formatName = buff.read(32).decode(encoding).replace('\x00', '')
 		return msg
 
@@ -149,6 +154,7 @@ class CLIPRDR_LONG_FORMAT_NAME:
 	def __init__(self, encoding = 'utf-16-le'):
 		self.formatId:CLIPBRD_FORMAT = None
 		self.wszFormatName:str = None #variable, if none or '' then one single b'\x00'
+		self.clpfmt = None
 
 	def to_bytes(self):
 		if self.wszFormatName is None or self.wszFormatName == '':
@@ -169,12 +175,11 @@ class CLIPRDR_LONG_FORMAT_NAME:
 	@staticmethod
 	def from_buffer(buff: io.BytesIO):
 		msg = CLIPRDR_LONG_FORMAT_NAME()
-		t = buff.read(4)
-		# not all formats are documented!!!!
+		msg.clpfmt = int.from_bytes(buff.read(4), byteorder='little', signed=False)
 		try:
-			msg.formatId = CLIPBRD_FORMAT(int.from_bytes(t, byteorder='little', signed=False))
-		except Exception as e:
-			msg.formatId = int.from_bytes(t, byteorder='little', signed=False)
+			msg.formatId = CLIPBRD_FORMAT(msg.clpfmt)
+		except:
+			msg.formatId = CLIPBRD_FORMAT.UNKNOWN
 		
 		t = buff.read(1)
 		if t == b'\x00':

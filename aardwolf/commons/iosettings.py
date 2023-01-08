@@ -2,12 +2,20 @@ from aardwolf.extensions.RDPECLIP.channel import RDPECLIPChannel
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
 from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from aardwolf.protocol.T125.extendedinfopacket import PERF
+from aardwolf.extensions.RDPEDYC.channel import RDPEDYCChannel
+
+from aardwolf.extensions.RDPEDYC.vchannels.echo import VchannelECHO
+from aardwolf.extensions.RDPEDYC.vchannels.test import VchannelTEST
 
 class RDPIOSettings:
 	def __init__(self):
 		# RDP only settings
 		# Which channels should be enabled
-		self.channels = [RDPECLIPChannel]
+		self.channels = [RDPECLIPChannel, RDPEDYCChannel]
+		self.vchannels = {
+			'ECHO' : VchannelECHO(),
+			'DATATEST1' : VchannelTEST(),
+		}
 		# Authentication protocols supported
 		self.supported_protocols = None # supported_protocols if None: it will be determined automatically. otherwise  select one or more from these SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
 
