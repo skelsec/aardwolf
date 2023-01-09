@@ -2,6 +2,7 @@
 import asyncio
 import traceback
 import enum
+import datetime
 
 from aardwolf import logger
 from aardwolf.channels import Channel
@@ -24,6 +25,7 @@ class RDPECLIPChannel(Channel):
 	name = 'cliprdr'
 	def __init__(self, iosettings):
 		Channel.__init__(self, self.name, ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP|ChannelOption.COMPRESS_RDP|ChannelOption.SHOW_PROTOCOL)
+		self.iosettings = iosettings
 		self.use_pyperclip = iosettings.clipboard_use_pyperclip
 		self.status = CLIPBRDSTATUS.WAITING_SERVER_INIT
 		self.compression_needed = False #TODO: tie it to flags
@@ -31,10 +33,10 @@ class RDPECLIPChannel(Channel):
 		self.server_caps = None
 		self.server_general_caps = None
 		self.client_general_caps_flags = CB_GENERAL_FALGS.HUGE_FILE_SUPPORT_ENABLED | CB_GENERAL_FALGS.FILECLIP_NO_FILE_PATHS | CB_GENERAL_FALGS.STREAM_FILECLIP_ENABLED #| CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES # CB_GENERAL_FALGS.CAN_LOCK_CLIPDATA | #| CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES
-		self.__buffer = b''
 		self.current_server_formats = {}
 		self.__requested_format = None
-		self.__current_clipboard_data:RDP_CLIPBOARD_DATA_TXT = None 
+		self.__current_clipboard_data:RDP_CLIPBOARD_DATA_TXT = None
+		self.__channel_fragment_buffer = b''
 
 	async def start(self):
 		try:
@@ -93,13 +95,15 @@ class RDPECLIPChannel(Channel):
 		except Exception as e:
 			return None, e
 	
-	async def __process_in(self):
+	async def __process_in(self, hdr:CLIPRDR_HEADER, payload:bytes):
 		try:
-			hdr = CLIPRDR_HEADER.from_bytes(self.__buffer)
+			#hdr = CLIPRDR_HEADER.from_bytes(self.__buffer)
 
 			if self.status == CLIPBRDSTATUS.RUNNING:
+				#print(hdr.msgType)
 				if hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
-					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(self.__buffer[8:8+hdr.dataLen], longnames=CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags, encoding='ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le')
+					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(payload[:hdr.dataLen], longnames=CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags, encoding='ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le')
+					
 					self.current_server_formats = {}
 					for fmte in fmtl.templist:
 						self.current_server_formats[fmte.formatId] = fmte
@@ -127,11 +131,19 @@ class RDPECLIPChannel(Channel):
 						logger.debug('Server rejected our copy request!')
 					else:
 						try:
-							fmtdata = CLIPRDR_FORMAT_DATA_RESPONSE.from_bytes(self.__buffer[8:8+hdr.dataLen],otype=self.__requested_format)
+							fmtdata = CLIPRDR_FORMAT_DATA_RESPONSE.from_bytes(payload[:hdr.dataLen],otype=self.__requested_format)
 						
 							if self.use_pyperclip is True and self.__requested_format in [CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_UNICODETEXT]:
 								import pyperclip
+								#print(fmtdata.dataobj)
 								pyperclip.copy(fmtdata.dataobj)
+							
+							if self.iosettings.clipboard_store_data is True or isinstance(self.iosettings.clipboard_store_data, str) is True:
+								fname = self.iosettings.clipboard_store_data
+								if self.iosettings.clipboard_store_data is True or len(fname) == 0:
+									fname = 'clipboard_%s.txt' % (datetime.datetime.utcnow().strftime("%Y_%m_%d_%H%MZ"))
+								with open(fname, 'a+') as f:
+									f.write(str(fmtdata.dataobj))
 
 							msg = RDP_CLIPBOARD_DATA_TXT()
 							msg.data = fmtdata.dataobj
@@ -145,13 +157,15 @@ class RDPECLIPChannel(Channel):
 				
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_DATA_REQUEST:
 
-					fmtr = CLIPRDR_FORMAT_DATA_REQUEST.from_bytes(self.__buffer[8:8+hdr.dataLen])
+					fmtr = CLIPRDR_FORMAT_DATA_REQUEST.from_bytes(payload[:hdr.dataLen])
 					if fmtr.requestedFormatId == self.__current_clipboard_data.datatype:
 						resp = CLIPRDR_FORMAT_DATA_RESPONSE()
 						resp.dataobj = self.__current_clipboard_data.data
 						resp = resp.to_bytes(self.__current_clipboard_data.datatype)
 
+						
 						msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_RESPONSE, CB_FLAG.CB_RESPONSE_OK, resp)
+						#print('setting clipboard text! %s' % repr(msg))
 						await self.fragment_and_send(msg)
 					
 					else:
@@ -161,7 +175,7 @@ class RDPECLIPChannel(Channel):
 			elif self.status == CLIPBRDSTATUS.WAITING_SERVER_INIT:
 				# we expect either CLIPRDR_CAPS or CLIPRDR_MONITOR_READY
 				if hdr.msgType == CB_TYPE.CB_CLIP_CAPS:
-					self.server_caps = CLIPRDR_CAPS.from_bytes(self.__buffer[8:8+hdr.dataLen])
+					self.server_caps = CLIPRDR_CAPS.from_bytes(payload[:hdr.dataLen])
 					self.server_general_caps = self.server_caps.capabilitySets[0] #it's always the generalflags
 					logger.debug(self.server_general_caps)
 				elif hdr.msgType == CB_TYPE.CB_MONITOR_READY:
@@ -191,38 +205,52 @@ class RDPECLIPChannel(Channel):
 				
 
 
-			self.__buffer = self.__buffer[8+hdr.dataLen:]
+			#self.__buffer = self.__buffer[8+hdr.dataLen:]
 			return True, None
 		except Exception as e:
 			return None, e
 
 	async def process_channel_data(self, data):
 		channeldata = CHANNEL_PDU_HEADER.from_bytes(data)
-		#print('channeldata %s' % channeldata)
-		self.__buffer += channeldata.data
+		data = data[8:] #discarding the lower layer headers
+		if CHANNEL_FLAG.CHANNEL_FLAG_FIRST in channeldata.flags:
+			self.__channel_fragment_buffer = b''
+
+		self.__channel_fragment_buffer += data
 		if CHANNEL_FLAG.CHANNEL_FLAG_LAST in channeldata.flags:
-			_, err = await self.__process_in()
+			hdr = CLIPRDR_HEADER.from_bytes(self.__channel_fragment_buffer)
+			_, err = await self.__process_in(hdr, self.__channel_fragment_buffer[8:])
 			if err is not None:
 				raise err
-
+	
 	async def fragment_and_send(self, data):
 		try:
-			if len(data) < 16000:
-				if self.compression_needed is False:
-					flags = CHANNEL_FLAG.CHANNEL_FLAG_FIRST|CHANNEL_FLAG.CHANNEL_FLAG_LAST|CHANNEL_FLAG.CHANNEL_FLAG_SHOW_PROTOCOL
-					packet = CHANNEL_PDU_HEADER.serialize_packet(flags, data)
+			if self.compression_needed is True:
+				raise NotImplementedError('Compression not implemented!')
+			i = 0
+			while(i <= len(data)):
+				flags = CHANNEL_FLAG.CHANNEL_FLAG_SHOW_PROTOCOL
+				chunk = data[i:i+1400]
+				if i == 0:
+					flags |= CHANNEL_FLAG.CHANNEL_FLAG_FIRST
+					# the first fragment must contain the length of the total data we want to send
+					length = len(data)
 				else:
-					raise NotImplementedError('Compression not implemented!')
-			else:
-				raise NotImplementedError('Chunked send not implemented!')
-			
-			sec_hdr = None
-			if self.connection.cryptolayer is not None:
-				sec_hdr = TS_SECURITY_HEADER()
-				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
-				sec_hdr.flagsHi = 0
+					# if it's not the first fragment then the length equals to the chunk's length
+					length = None
+				
+				i+= 1400
+				if i >= len(data):
+					flags |= CHANNEL_FLAG.CHANNEL_FLAG_LAST
+				packet = CHANNEL_PDU_HEADER.serialize_packet(flags, chunk, length = length)
 
-			await self.send_channel_data(packet, sec_hdr, None, None, False)
+				sec_hdr = None
+				if self.connection.cryptolayer is not None:
+					sec_hdr = TS_SECURITY_HEADER()
+					sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+					sec_hdr.flagsHi = 0
+
+				await self.send_channel_data(packet, sec_hdr, None, None, False)
 
 			return True, False
 		except Exception as e:
@@ -231,7 +259,7 @@ class RDPECLIPChannel(Channel):
 	
 
 	async def process_user_data(self, data):
-		#print('monitor out! %s' % data)
+		#print('clipboard out! %s' % data)
 		if data.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
 			# data in, informing the server that our clipboard has changed
 			if data == self.__current_clipboard_data:

@@ -52,7 +52,12 @@ class RDPIOSettings:
 		# pyperclip is currently the only somewhat working cross-platform clipboard manager
 		# disabling it means that clipboard messages will only be dispatched via the external queue
 		# but the client's clipboard will not be updated
-		self.clipboard_use_pyperclip = True 
+		self.clipboard_use_pyperclip = True
+
+		# store all incloing clipboard data recieved from server. Text only
+		# set it to true to have a file created, or to a string with a file path
+		# 
+		self.clipboard_store_data = None
 
 		# determines how often the client polls for desktop changes
 		self.vnc_fps = 10
