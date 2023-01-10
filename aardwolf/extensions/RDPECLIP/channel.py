@@ -37,6 +37,7 @@ class RDPECLIPChannel(Channel):
 		self.__requested_format = None
 		self.__current_clipboard_data:RDP_CLIPBOARD_DATA_TXT = None
 		self.__channel_fragment_buffer = b''
+		self.__channel_writer_lock = asyncio.Lock()
 
 	async def start(self):
 		try:
@@ -224,38 +225,39 @@ class RDPECLIPChannel(Channel):
 				raise err
 	
 	async def fragment_and_send(self, data):
-		try:
-			if self.compression_needed is True:
-				raise NotImplementedError('Compression not implemented!')
-			i = 0
-			while(i <= len(data)):
-				flags = CHANNEL_FLAG.CHANNEL_FLAG_SHOW_PROTOCOL
-				chunk = data[i:i+1400]
-				if i == 0:
-					flags |= CHANNEL_FLAG.CHANNEL_FLAG_FIRST
-					# the first fragment must contain the length of the total data we want to send
-					length = len(data)
-				else:
-					# if it's not the first fragment then the length equals to the chunk's length
-					length = None
-				
-				i+= 1400
-				if i >= len(data):
-					flags |= CHANNEL_FLAG.CHANNEL_FLAG_LAST
-				packet = CHANNEL_PDU_HEADER.serialize_packet(flags, chunk, length = length)
+		async with self.__channel_writer_lock:
+			try:
+				if self.compression_needed is True:
+					raise NotImplementedError('Compression not implemented!')
+				i = 0
+				while(i <= len(data)):
+					flags = CHANNEL_FLAG.CHANNEL_FLAG_SHOW_PROTOCOL
+					chunk = data[i:i+1400]
+					if i == 0:
+						flags |= CHANNEL_FLAG.CHANNEL_FLAG_FIRST
+						# the first fragment must contain the length of the total data we want to send
+						length = len(data)
+					else:
+						# if it's not the first fragment then the length equals to the chunk's length
+						length = None
+					
+					i+= 1400
+					if i >= len(data):
+						flags |= CHANNEL_FLAG.CHANNEL_FLAG_LAST
+					packet = CHANNEL_PDU_HEADER.serialize_packet(flags, chunk, length = length)
 
-				sec_hdr = None
-				if self.connection.cryptolayer is not None:
-					sec_hdr = TS_SECURITY_HEADER()
-					sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
-					sec_hdr.flagsHi = 0
+					sec_hdr = None
+					if self.connection.cryptolayer is not None:
+						sec_hdr = TS_SECURITY_HEADER()
+						sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+						sec_hdr.flagsHi = 0
 
-				await self.send_channel_data(packet, sec_hdr, None, None, False)
+					await self.send_channel_data(packet, sec_hdr, None, None, False)
 
-			return True, False
-		except Exception as e:
-			traceback.print_exc()
-			return None,e
+				return True, False
+			except Exception as e:
+				traceback.print_exc()
+				return None,e
 	
 
 	async def process_user_data(self, data):
