@@ -5,7 +5,7 @@ from aardwolf.protocol.T125.extendedinfopacket import PERF
 from aardwolf.extensions.RDPEDYC.channel import RDPEDYCChannel
 
 from aardwolf.extensions.RDPEDYC.vchannels.echo import VchannelECHO
-from aardwolf.extensions.RDPEDYC.vchannels.test import VchannelTEST
+#from aardwolf.extensions.RDPEDYC.vchannels.test import VchannelTEST
 
 class RDPIOSettings:
 	def __init__(self):
@@ -14,7 +14,7 @@ class RDPIOSettings:
 		self.channels = [RDPECLIPChannel, RDPEDYCChannel]
 		self.vchannels = {
 			'ECHO' : VchannelECHO(),
-			'DATATEST1' : VchannelTEST(),
+			#'DATATEST1' : VchannelTEST(),
 		}
 		# Authentication protocols supported
 		self.supported_protocols = None # supported_protocols if None: it will be determined automatically. otherwise  select one or more from these SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID_EX
