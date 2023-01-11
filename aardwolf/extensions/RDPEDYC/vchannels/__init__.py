@@ -19,7 +19,7 @@ class VirtualChannelBase:
 		self.__virtual_channel_manager = manager
 		return await self.channel_init()
 
-	async def channel_rawdata_in(self, msg:DYNVC_DATA_FIRST|DYNVC_DATA):
+	async def channel_rawdata_in(self, msg:DYNVC_DATA_FIRST or DYNVC_DATA):
 		"""
 		This method is called by the Channel Manager whenever (uncompressed) data is coming in.
 		The data might be fragmented, so this function serves to reconstruct the entire data that is
