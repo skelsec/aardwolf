@@ -23,15 +23,15 @@ function clean_project {
 
 clean_project
 install_rust $RUST_CHANNEL
-rustc
 rm -rf /io/builder/manylinux/wheelhouse/* || echo "No old wheels to delete"
 mkdir -p /io/builder/manylinux/wheelhouse
 mkdir -p /io/dist
 
 for PYBIN in ${PYBINS[@]}; do
     ${PYBIN}/python -m pip wheel /io -w /io/builder/manylinux/wheelhouse/ --no-deps
-    for whl in /io/builder/manylinux/wheelhouse/aardwolf*.whl; do
-        auditwheel repair $whl -w /io/dist/
-    done
-    clean_project
 done
+
+for whl in /io/builder/manylinux/wheelhouse/aardwolf*.whl; do
+    auditwheel repair $whl -w /io/dist/
+done
+clean_project
