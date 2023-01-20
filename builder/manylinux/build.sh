@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e -x
 
-PYBINS=("/opt/python/cp37-cp37m/bin" "/opt/python/cp38-cp38/bin" "/opt/python/cp39-cp39/bin" "/opt/python/cp310-cp310/bin" "/opt/python/cp311-cp311/bin")
+PYBINS=("/opt/python/cp38-cp38/bin" "/opt/python/cp39-cp39/bin" "/opt/python/cp310-cp310/bin" "/opt/python/cp311-cp311/bin")
 RUST_CHANNEL=stable
 
 ls -la /opt/python/
@@ -29,8 +29,8 @@ mkdir -p /io/builder/manylinux/wheelhouse
 mkdir -p /io/dist
 
 for PYBIN in ${PYBINS[@]}; do
-    ${PYBIN}/python -m pip wheel /io -w /io/builder/manylinux/wheelhouse_tmp/
-    for whl in /io/builder/manylinux/wheelhouse_tmp/aardwolf*.whl; do
+    ${PYBIN}/python -m pip wheel /io -w /io/builder/manylinux/wheelhouse/ --no-deps
+    for whl in /io/builder/manylinux/wheelhouse/aardwolf*.whl; do
         auditwheel repair $whl -w /io/dist/
     done
     clean_project

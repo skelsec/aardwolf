@@ -8,6 +8,10 @@ from asysocks.unicomm.common.scanner.targetgen import UniTargetGen
 from asysocks.unicomm.common.scanner.scanner import UniScanner
 from aardwolf import logger
 
+from asysocks.unicomm.common.target import UniTarget
+from asyauth.common.credentials import UniCredential
+
+
 from aardwolf.examples.scanners.rdplogin import RDPLoginScanner
 from aardwolf.examples.scanners.rdpscaps import RDPCapabilitiesScanner
 from aardwolf.examples.scanners.rdpscreen import RDPScreenshotScanner
@@ -21,11 +25,46 @@ rdpscan_options = {
 async def amain():
 	import argparse
 
+	protocols = """RDP : RDP protocol
+	VNC: VNC protocol"""
+	authprotos = """ntlm     : CREDSSP+NTLM authentication
+	kerberos : CREDSSP+Kerberos authentication
+	sspi-ntlm: CREDSSP+NTLM authentication using current user's creds (Windows only, restricted admin mode only)
+	sspi-kerberos: CREDSSP+KERBEROS authentication using current user's creds (Windows only, restricted admin mode only)
+	plain    : Old username and password authentication (only works when NLA is disabled on the server)
+	none     : No authentication (same as plain, but no provided credentials needed)
+	"""
+	usage = UniCredential.get_help(protocols, authprotos, '')
+	usage += UniTarget.get_help()
+	usage += """
+RDP Examples:
+	Login with no credentials (only works when NLA is disabled on the server):
+		rdp://10.10.10.2
+	Login with username and password (only works when NLA is disabled on the server):
+		rdp://TEST\Administrator:Passw0rd!1@10.10.10.2
+	Login via CREDSSP+NTLM:
+		rdp+ntlm-password://TEST\Administrator:Passw0rd!1@10.10.10.2
+	Login via CREDSSP+Kerberos:
+		rdp+kerberos-password://TEST\Administrator:Passw0rd!1@win2019ad.test.corp/?dc=10.10.10.2
+	Login via CREDSSP+NTLM using current user's creds (Windows only, restricted admin mode only):
+		rdp+sspi-ntlm://win2019ad.test.corp
+	Login via CREDSSP+Kerberos using current user's creds (Windows only, restricted admin mode only):
+		rdp+sspi-kerberos://win2019ad.test.corp/
+	
+VNC examples:
+	Login with no credentials:
+		vnc://10.10.10.2
+	Login with password (the short way):
+		vnc://Passw0rd!1@10.10.10.2
+	Login with password:
+		vnc+plain-password://Passw0rd!1@10.10.10.2
+"""
+
 	scannertpes_usage = '\r\nall: Runs all scanners\r\n'
 	for k in rdpscan_options:
 		scannertpes_usage += '    %s: %s\r\n' % (k, rdpscan_options[k][1])
 	
-	usage = """
+	usage += """
 Scanner types (-s param):
     %s
 """% scannertpes_usage
