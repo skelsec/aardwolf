@@ -28,9 +28,7 @@ This is a headless client, for GUI functionality use the `aardwolfgui` package.
  - Support for Duckyscript files to emulate keystrokes 
 
 # Example scripts
- - `aardpscreenshot` RDP ?screenshotter? scans the given target/s or network ranges for open RDP clients, tries to log in either with or without credentials and takes a screemshot  
- - `aardpcapscan` RDP login capability scanner identifies the supported login protocols on a target or network ranges.  
-  - `aardploginscan` RDP login scanner.  
+ - `ardpscan` Multi-purpose scanner for RDP and VNC protocols. (screenshot/capabilities/login scanner)
 
 # URL format
 As usual the scripts take the target/scredentials in URL format. Below some examples
