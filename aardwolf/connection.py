@@ -1154,6 +1154,28 @@ class RDPConnection:
 			traceback.print_exc()
 			return None, e
 	
+	async def get_current_clipboard_text(self):
+		if 'cliprdr' not in self.__joined_channels:
+			return None
+		return await self.__joined_channels['cliprdr'].get_current_clipboard_text()
+
+	async def set_current_clipboard_text(self, text:str):
+		if 'cliprdr' not in self.__joined_channels:
+			return None
+		return await self.__joined_channels['cliprdr'].set_current_clipboard_text(text)
+	
+	async def add_vchannel(self, channelname, handler):
+		if 'drdynvc' not in self.__joined_channels:
+			raise Exception('Dynamic Virtual Channels are not enabled on this connection!')
+		if channelname in self.__joined_channels['drdynvc'].defined_channels:
+			raise Exception('Channel already defined!')
+		self.__joined_channels['drdynvc'].defined_channels[channelname] = handler
+	
+	def get_vchannels(self):
+		if 'drdynvc' not in self.__joined_channels:
+			raise Exception('Dynamic Virtual Channels are not enabled on this connection!')
+		return self.__joined_channels['drdynvc'].defined_channels
+	
 	async def __external_reader(self):
 		# This coroutine handles keyboard/mouse etc input from the user
 		# It wraps the data in it's appropriate format then dispatches it to the server

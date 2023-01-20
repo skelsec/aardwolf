@@ -150,6 +150,7 @@ class RDPECLIPChannel(Channel):
 							msg.data = fmtdata.dataobj
 							msg.datatype = self.__requested_format
 							await self.send_user_data(msg)
+							self.__current_clipboard_data = msg
 						
 						except Exception as e:
 							raise e
@@ -259,27 +260,40 @@ class RDPECLIPChannel(Channel):
 				traceback.print_exc()
 				return None,e
 	
+	async def get_current_clipboard_text(self):
+		if self.__current_clipboard_data is None:
+			return ''
+		return str(self.__current_clipboard_data.data)
+
+	async def set_current_clipboard_text(self, text:str):
+		data = RDP_CLIPBOARD_DATA_TXT()
+		data.datatype = CLIPBRD_FORMAT.CF_UNICODETEXT
+		data.data = text
+		await self.set_clipboard_data(data)
+	
+
+	async def set_clipboard_data(self, data, force_refresh = True):
+		if data == self.__current_clipboard_data and force_refresh is False:
+			return
+
+		fmtl = CLIPRDR_FORMAT_LIST()
+		for fmtid in [CLIPBRD_FORMAT.CF_UNICODETEXT]: #CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_OEMTEXT
+			if CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES not in self.server_general_caps.generalFlags:
+				name = CLIPRDR_LONG_FORMAT_NAME()
+				name.formatId = data.datatype
+			else:
+				name = CLIPRDR_SHORT_FORMAT_NAME()
+				name.formatId = data.datatype
+			fmtl.templist.append(name)
+		msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST, 0, fmtl)
+		await self.fragment_and_send(msg)
+
+		self.__current_clipboard_data = data
 
 	async def process_user_data(self, data):
 		#print('clipboard out! %s' % data)
 		if data.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
-			# data in, informing the server that our clipboard has changed
-			if data == self.__current_clipboard_data:
-				return
-					
-			fmtl = CLIPRDR_FORMAT_LIST()
-			for fmtid in [CLIPBRD_FORMAT.CF_UNICODETEXT]: #CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_OEMTEXT
-				if CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES not in self.server_general_caps.generalFlags:
-					name = CLIPRDR_LONG_FORMAT_NAME()
-					name.formatId = data.datatype
-				else:
-					name = CLIPRDR_SHORT_FORMAT_NAME()
-					name.formatId = data.datatype
-				fmtl.templist.append(name)
-			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST, 0, fmtl)
-			await self.fragment_and_send(msg)
-
-			self.__current_clipboard_data = data
+			await self.set_clipboard_data(data, False)
 				
 		else:
 			logger.debug('Unhandled data type in! %s' % data.type)

@@ -6,9 +6,13 @@ clean:
 	find . -name '*.pyo' -exec rm -f {} +
 	find . -name '*~' -exec rm -f  {} +
 
-publish: clean
-	python3 setup.py sdist bdist_wheel
+publish: clean package
 	python3 -m twine upload dist/*
+
+package: clean
+	python3 setup.py sdist
+	docker pull quay.io/pypa/manylinux2014_x86_64
+	docker run --rm -v `pwd`:/io quay.io/pypa/manylinux2014_x86_64 /io/builder/manylinux/build.sh
 
 rebuild: clean
 	python3 setup.py install
