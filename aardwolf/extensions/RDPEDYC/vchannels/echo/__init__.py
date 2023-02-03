@@ -14,3 +14,5 @@ class VchannelECHO(VirtualChannelBase):
 		#print('ECHO channel data in: %s' % data)
 		await self.channel_data_out(data)
 	
+	def __deepcopy__(self, memo):
+		return VchannelECHO()

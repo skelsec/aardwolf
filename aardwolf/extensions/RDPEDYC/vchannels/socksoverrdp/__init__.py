@@ -108,3 +108,5 @@ class SocksOverRDPChannel(VirtualChannelBase):
             self.__connections[connid].close()
         self.__server.close()
 
+    def __deepcopy__(self, memo):
+        return SocksOverRDPChannel(self.channel_name, self.listen_ip, self.listen_port)

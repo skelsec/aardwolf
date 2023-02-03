@@ -17,3 +17,6 @@ class VchannelTEST(VirtualChannelBase):
 
 		await asyncio.sleep(5)
 		await self.channel_data_out(b'AB'*5000)
+	
+	def __deepcopy__(self, memo):
+		return VchannelTEST()

@@ -1277,7 +1277,7 @@ class RDPConnection:
 			await self.terminate()
 			return None, e
 		
-	
+
 async def amain():
 	try:
 		from aardwolf.commons.factory import RDPConnectionFactory
@@ -1285,7 +1285,6 @@ async def amain():
 		from aardwolf.extensions.RDPEDYC.channel import RDPEDYCChannel
 
 		iosettings = RDPIOSettings()
-		iosettings.channels.append(RDPEDYCChannel)
 		url = 'rdp+ntlm-password://TEST\\Administrator:Passw0rd!1@10.10.10.102'
 		rdpurl = RDPConnectionFactory.from_url(url, iosettings)
 		conn = rdpurl.get_connection(iosettings)
@@ -1295,7 +1294,7 @@ async def amain():
 		
 		while True:
 			data = await conn.ext_out_queue.get()
-			#print(data)
+			print(data)
 	except Exception as e:
 		traceback.print_exc()
 
