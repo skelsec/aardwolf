@@ -45,7 +45,7 @@ setup(
 
 	install_requires=[
 		'unicrypto>=0.0.9',
-		'asyauth>=0.0.11',
+		'asyauth>=0.0.12',
 		'asysocks>=0.2.5',
 		'minikerberos>=0.3.5',
 		'tqdm',
