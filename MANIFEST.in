@@ -1,4 +1,7 @@
-include LICENSE README.md
-graft T124
-graft T125
-graft rlers
+include LICENSE
+include README.md
+graft aardwolf/protocol/T124
+graft aardwolf/protocol/T125
+graft aardwolf/utils/rlers/src
+include aardwolf/utils/rlers/Cargo.toml
+include aardwolf/utils/rlers/pyproject.toml
