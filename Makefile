@@ -2,6 +2,7 @@ clean:
 	rm -f -r build/
 	rm -f -r dist/
 	rm -f -r *.egg-info
+	rm -f -r aardwolf/utils/rlers/target/
 	find . -name '*.pyc' -exec rm -f {} +
 	find . -name '*.pyo' -exec rm -f {} +
 	find . -name '*~' -exec rm -f  {} +
