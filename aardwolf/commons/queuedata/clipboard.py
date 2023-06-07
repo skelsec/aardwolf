@@ -1,4 +1,7 @@
+from typing import Any, Protocol
+
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT
+from aardwolf.extensions.RDPECLIP.protocol.formatdataresponse import CLIPRDR_FILELIST
 from aardwolf.commons.queuedata import RDPDATATYPE
 
 
@@ -26,16 +29,25 @@ class RDP_CLIPBOARD_NEW_DATA_AVAILABLE:
 	"""
 	def __init__(self):
 		self.type = RDPDATATYPE.CLIPBOARD_NEW_DATA_AVAILABLE
-	
-class RDP_CLIPBOARD_DATA_TXT:
+
+class RDP_CLIPBOARD_DATA(Protocol):
+	data:Any
+	datatype:CLIPBRD_FORMAT
+
+class RDP_CLIPBOARD_DATA_FILELIST(RDP_CLIPBOARD_DATA):
+	def __init__(self, data:CLIPRDR_FILELIST, datatype:CLIPBRD_FORMAT):
+		self.data = data
+		self.datatype = datatype
+
+class RDP_CLIPBOARD_DATA_TXT(RDP_CLIPBOARD_DATA):
 	"""
 	This object will be dispatched on the external queue 
 	when the new clipboard data has arrived from the server to our client
 	"""
-	def __init__(self):
+	def __init__(self, data:str = '', datatype:CLIPBRD_FORMAT = CLIPBRD_FORMAT.CF_UNICODETEXT):
 		self.type = RDPDATATYPE.CLIPBOARD_DATA_TXT
-		self.data = None
-		self.datatype: CLIPBRD_FORMAT = None
+		self.data = data
+		self.datatype = datatype
 
 	def get_data(self, fmt:CLIPBRD_FORMAT = None):
 		if fmt is None:

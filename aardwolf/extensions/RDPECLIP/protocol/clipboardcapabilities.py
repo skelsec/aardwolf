@@ -47,7 +47,7 @@ class CLIPRDR_GENERAL_CAPABILITY:
 		t = '==== CLIPRDR_GENERAL_CAPABILITY ====\r\n'
 		for k in self.__dict__:
 			if isinstance(self.__dict__[k], enum.IntFlag):
-				value = self.__dict__[k]
+				value = repr(self.__dict__[k])
 			elif isinstance(self.__dict__[k], enum.Enum):
 				value = self.__dict__[k].name
 			else:

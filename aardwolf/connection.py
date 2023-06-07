@@ -1155,15 +1155,18 @@ class RDPConnection:
 			return None, e
 	
 	async def get_current_clipboard_text(self):
-		if 'cliprdr' not in self.__joined_channels:
-			return None
-		return await self.__joined_channels['cliprdr'].get_current_clipboard_text()
+		if self.iosettings.clipboard is not None:
+			return await self.iosettings.clipboard.get_current_clipboard_text()
+		return None
 
 	async def set_current_clipboard_text(self, text:str):
-		if 'cliprdr' not in self.__joined_channels:
-			return None
-		return await self.__joined_channels['cliprdr'].set_current_clipboard_text(text)
+		if self.iosettings.clipboard is not None:
+			await self.iosettings.clipboard.set_current_clipboard_text(text)
 	
+	async def set_current_clipboard_files(self, filepaths):
+		if self.iosettings.clipboard is not None:
+			await self.iosettings.clipboard.set_current_clipboard_files(filepaths)
+
 	async def add_vchannel(self, channelname, handler):
 		if 'drdynvc' not in self.__joined_channels:
 			raise Exception('Dynamic Virtual Channels are not enabled on this connection!')

@@ -12,7 +12,9 @@ from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_
 from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
 from aardwolf.commons.queuedata import RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
-from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA_TXT
+from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA, RDP_CLIPBOARD_DATA_TXT
+from aardwolf.extensions.RDPECLIP.protocol.filecontentsresponse import CLIPRDR_FILECONTENTS_RESPONSE
+from aardwolf.extensions.RDPECLIP.protocol.filecontentsrequest import CLIPRDR_FILECONTENTS_REQUEST, FILECONTENTS_FLAG
 from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
 
 class CLIPBRDSTATUS(enum.Enum):
@@ -26,18 +28,19 @@ class RDPECLIPChannel(Channel):
 	def __init__(self, iosettings):
 		Channel.__init__(self, self.name, ChannelOption.INITIALIZED|ChannelOption.ENCRYPT_RDP|ChannelOption.COMPRESS_RDP|ChannelOption.SHOW_PROTOCOL)
 		self.iosettings = iosettings
+		self.clipboard = iosettings.clipboard
 		self.use_pyperclip = iosettings.clipboard_use_pyperclip
 		self.status = CLIPBRDSTATUS.WAITING_SERVER_INIT
 		self.compression_needed = False #TODO: tie it to flags
-		self.supported_formats = [CLIPBRD_FORMAT.CF_UNICODETEXT] #, CLIPBRD_FORMAT.CF_HDROP
 		self.server_caps = None
 		self.server_general_caps = None
-		self.client_general_caps_flags = CB_GENERAL_FLAGS.HUGE_FILE_SUPPORT_ENABLED | CB_GENERAL_FLAGS.FILECLIP_NO_FILE_PATHS | CB_GENERAL_FLAGS.STREAM_FILECLIP_ENABLED #| CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES # CB_GENERAL_FLAGS.CAN_LOCK_CLIPDATA | #| CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES
+		self.client_general_caps_flags = CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES | CB_GENERAL_FLAGS.HUGE_FILE_SUPPORT_ENABLED | CB_GENERAL_FLAGS.FILECLIP_NO_FILE_PATHS | CB_GENERAL_FLAGS.STREAM_FILECLIP_ENABLED # | CB_GENERAL_FLAGS.CAN_LOCK_CLIPDATA
 		self.current_server_formats = {}
 		self.__requested_format = None
-		self.__current_clipboard_data:RDP_CLIPBOARD_DATA_TXT = None
 		self.__channel_fragment_buffer = b''
 		self.__channel_writer_lock = asyncio.Lock()
+
+		self.clipboard.register_handler(self)
 
 	async def start(self):
 		try:
@@ -66,7 +69,9 @@ class RDPECLIPChannel(Channel):
 		try:
 			# sending capabilities
 			gencap = CLIPRDR_GENERAL_CAPABILITY()
-			gencap.generalFlags = self.client_general_caps_flags
+			gencap.generalFlags = self.client_general_caps_flags & self.server_general_caps.generalFlags
+
+			logger.debug(f'Sending capabilities: {repr(gencap.generalFlags)}')
 
 			caps = CLIPRDR_CAPS()
 			caps.capabilitySets.append(gencap)
@@ -83,9 +88,8 @@ class RDPECLIPChannel(Channel):
 
 			# synchronizing formatlist
 			fmtl = CLIPRDR_FORMAT_LIST()
-			for reqfmt in self.supported_formats:
-				fe = CLIPRDR_LONG_FORMAT_NAME()
-				fe.formatId = reqfmt
+			for reqfmt, name in self.clipboard.formats.items():
+				fe = self._generate_format_name(reqfmt, name)
 				fmtl.templist.append(fe)
 
 			self.status = CLIPBRDSTATUS.CLIENT_INIT
@@ -103,54 +107,19 @@ class RDPECLIPChannel(Channel):
 			if self.status == CLIPBRDSTATUS.RUNNING:
 				#print(hdr.msgType)
 				if hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
-					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(payload[:hdr.dataLen], longnames=CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags, encoding='ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le')
-					
-					self.current_server_formats = {}
-					for fmte in fmtl.templist:
-						self.current_server_formats[fmte.formatId] = fmte
-					
-					# sending back an OK
-					msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST_RESPONSE, CB_FLAG.CB_RESPONSE_OK, None)
-					await self.fragment_and_send(msg)
-
-					if CLIPBRD_FORMAT.CF_UNICODETEXT in self.current_server_formats.keys():
-						# pyperclip is in use and server just notified us about a new text copied, so we request the text
-						# automatically
-						self.__requested_format = CLIPBRD_FORMAT.CF_UNICODETEXT
-						dreq = CLIPRDR_FORMAT_DATA_REQUEST()
-						dreq.requestedFormatId = CLIPBRD_FORMAT.CF_UNICODETEXT
-						msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_REQUEST, 0, dreq)
-						await self.fragment_and_send(msg)
-
-						# notifying client that new data is available
-						msg = RDP_CLIPBOARD_NEW_DATA_AVAILABLE()
-						await self.send_user_data(msg)
-
-				
+					encoding = 'ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le'
+					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(payload[:hdr.dataLen], longnames=self._longnames_enabled(), encoding=encoding)
+					await self._handle_format_list(fmtl)
+				elif hdr.msgType == CB_TYPE.CB_FILECONTENTS_REQUEST:
+					fileContentsRequest = CLIPRDR_FILECONTENTS_REQUEST.from_bytes(payload[:hdr.dataLen])
+					await self._handle_filecontents_request(fileContentsRequest)
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_DATA_RESPONSE:
 					if hdr.msgFlags != hdr.msgFlags.CB_RESPONSE_OK:
 						logger.debug('Server rejected our copy request!')
 					else:
 						try:
 							fmtdata = CLIPRDR_FORMAT_DATA_RESPONSE.from_bytes(payload[:hdr.dataLen],otype=self.__requested_format)
-						
-							if self.use_pyperclip is True and self.__requested_format in [CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_UNICODETEXT]:
-								import pyperclip
-								#print(fmtdata.dataobj)
-								pyperclip.copy(fmtdata.dataobj)
-							
-							if self.iosettings.clipboard_store_data is True or isinstance(self.iosettings.clipboard_store_data, str) is True:
-								fname = self.iosettings.clipboard_store_data
-								if self.iosettings.clipboard_store_data is True or len(fname) == 0:
-									fname = 'clipboard_%s.txt' % (datetime.datetime.utcnow().strftime("%Y_%m_%d_%H%MZ"))
-								with open(fname, 'a+') as f:
-									f.write(str(fmtdata.dataobj))
-
-							msg = RDP_CLIPBOARD_DATA_TXT()
-							msg.data = fmtdata.dataobj
-							msg.datatype = self.__requested_format
-							await self.send_user_data(msg)
-							self.__current_clipboard_data = msg
+							await self._handle_format_data_response(fmtdata)
 						
 						except Exception as e:
 							raise e
@@ -158,28 +127,20 @@ class RDPECLIPChannel(Channel):
 							self.__requested_format = None
 				
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_DATA_REQUEST:
-
 					fmtr = CLIPRDR_FORMAT_DATA_REQUEST.from_bytes(payload[:hdr.dataLen])
-					if fmtr.requestedFormatId == self.__current_clipboard_data.datatype:
-						resp = CLIPRDR_FORMAT_DATA_RESPONSE()
-						resp.dataobj = self.__current_clipboard_data.data
-						resp = resp.to_bytes(self.__current_clipboard_data.datatype)
-
-						
-						msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_RESPONSE, CB_FLAG.CB_RESPONSE_OK, resp)
-						#print('setting clipboard text! %s' % repr(msg))
-						await self.fragment_and_send(msg)
-					
+					await self._handle_format_data_request(fmtr)
+				elif hdr.msgType == CB_TYPE.CB_FORMAT_LIST_RESPONSE:
+					if CB_FLAG.CB_RESPONSE_OK in hdr.msgFlags:
+						logger.debug('Server accepted our copy request!')
 					else:
-						logger.debug('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
-						
+						logger.debug('Server rejected our copy request!')
 			
 			elif self.status == CLIPBRDSTATUS.WAITING_SERVER_INIT:
 				# we expect either CLIPRDR_CAPS or CLIPRDR_MONITOR_READY
 				if hdr.msgType == CB_TYPE.CB_CLIP_CAPS:
 					self.server_caps = CLIPRDR_CAPS.from_bytes(payload[:hdr.dataLen])
 					self.server_general_caps = self.server_caps.capabilitySets[0] #it's always the generalflags
-					logger.debug(self.server_general_caps)
+					logger.debug(f'Received server capabilities: {self.server_general_caps}')
 				elif hdr.msgType == CB_TYPE.CB_MONITOR_READY:
 					_, err = await self.__send_capabilities()
 					if err is not None:
@@ -211,6 +172,111 @@ class RDPECLIPChannel(Channel):
 			return True, None
 		except Exception as e:
 			return None, e
+		
+	def _longnames_enabled(self) -> bool:
+		return CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags
+
+	def _get_format_name(self, format) -> str:
+		if self._longnames_enabled():
+			return format.wszFormatName
+		else:
+			return format.formatName
+		
+	def _generate_format_name(self, format_id, format_name, use_ascii = False):
+		if self._longnames_enabled():
+			fe = CLIPRDR_LONG_FORMAT_NAME()
+			fe.formatId = format_id
+			fe.wszFormatName = format_name
+			return fe
+		else:
+			encoding = 'ascii' if use_ascii else 'utf-16-le'
+			fe = CLIPRDR_SHORT_FORMAT_NAME(encoding=encoding)
+			fe.formatId = format_id
+			fe.formatName = format_name
+			return fe
+
+	async def _handle_format_list(self, fmtl:CLIPRDR_FORMAT_LIST):
+		self.current_server_formats = {}
+		for fmte in fmtl.templist:
+			self.current_server_formats[fmte.formatId] = fmte
+
+			# Lookup format name in clipboard formats?
+			if fmte.formatId not in self.clipboard.formats:
+				format_name = self._get_format_name(fmte)
+				logger.debug(f'Received unknown format: {format_name} with id {fmte.formatId} -> {fmte.clpfmt}')
+		
+		# sending back an OK
+		msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST_RESPONSE, CB_FLAG.CB_RESPONSE_OK, None)
+		await self.fragment_and_send(msg)
+
+		if CLIPBRD_FORMAT.CF_UNICODETEXT in self.current_server_formats.keys():
+			# pyperclip is in use and server just notified us about a new text copied, so we request the text
+			# automatically
+			self.__requested_format = CLIPBRD_FORMAT.CF_UNICODETEXT
+			dreq = CLIPRDR_FORMAT_DATA_REQUEST()
+			dreq.requestedFormatId = CLIPBRD_FORMAT.CF_UNICODETEXT
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_REQUEST, 0, dreq)
+			await self.fragment_and_send(msg)
+
+			# notifying client that new data is available
+			msg = RDP_CLIPBOARD_NEW_DATA_AVAILABLE()
+			await self.send_user_data(msg)
+
+	async def _handle_filecontents_request(self, fileContentsRequest:CLIPRDR_FILECONTENTS_REQUEST):
+		# Paste: The remote machine is requesting the contents of a file
+		logger.debug(f'Server requested file contents for index {fileContentsRequest.lindex}!')
+		if fileContentsRequest.dwFlags == FILECONTENTS_FLAG.FILECONTENTS_SIZE:
+			logger.debug('Server requested file size')
+			resp = CLIPRDR_FILECONTENTS_RESPONSE(is_size=True)
+			resp.streamId = fileContentsRequest.streamId
+			resp.requestedFileContentsData = self.clipboard.get_file_size(fileContentsRequest.lindex)
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FILECONTENTS_RESPONSE, CB_FLAG.CB_RESPONSE_OK, resp)
+			await self.fragment_and_send(msg)
+		elif fileContentsRequest.dwFlags == FILECONTENTS_FLAG.FILECONTENTS_RANGE:
+			logger.debug(f'Server requested up to {fileContentsRequest.cbRequested} bytes in range ({fileContentsRequest.nPositionLow}-{fileContentsRequest.nPositionHigh})')
+			resp = CLIPRDR_FILECONTENTS_RESPONSE(is_size=False)
+			resp.streamId = fileContentsRequest.streamId
+			resp.requestedFileContentsData = self.clipboard.get_file_data(fileContentsRequest.lindex, fileContentsRequest.nPositionLow, fileContentsRequest.cbRequested)
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FILECONTENTS_RESPONSE, CB_FLAG.CB_RESPONSE_OK, resp)
+			await self.fragment_and_send(msg)
+		else: 
+			logger.debug('Bad server request.')
+			resp = CLIPRDR_FILECONTENTS_RESPONSE(is_size=False)
+			resp.streamId = fileContentsRequest.streamId
+			resp.requestedFileContentsData = b''
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FILECONTENTS_RESPONSE, CB_FLAG.CB_RESPONSE_FAIL, resp)
+			await self.fragment_and_send(msg)
+
+	async def _handle_format_data_request(self, fmtr:CLIPRDR_FORMAT_DATA_REQUEST):
+		# Paste: The remote machine is requesting clipboard data
+		logger.debug(f'Got a CB_FORMAT_DATA_REQUEST for formatid {fmtr.requestedFormatId}')
+		if fmtr.requestedFormatId == self.clipboard.data.datatype:
+			resp = CLIPRDR_FORMAT_DATA_RESPONSE()
+			resp.dataobj = self.clipboard.data.data
+			resp = resp.to_bytes(self.clipboard.data.datatype)
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_RESPONSE, CB_FLAG.CB_RESPONSE_OK, resp)
+			await self.fragment_and_send(msg)
+		
+		else:
+			logger.debug('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
+
+	async def _handle_format_data_response(self, fmtdata:CLIPRDR_FORMAT_DATA_RESPONSE):
+		# Paste: The remote machine has responded to our request for clipboard data
+		if self.use_pyperclip is True and self.__requested_format in [CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_UNICODETEXT]:
+			import pyperclip
+			#print(fmtdata.dataobj)
+			pyperclip.copy(fmtdata.dataobj)
+		
+		if self.iosettings.clipboard_store_data is True or isinstance(self.iosettings.clipboard_store_data, str) is True:
+			fname = self.iosettings.clipboard_store_data
+			if self.iosettings.clipboard_store_data is True or len(fname) == 0:
+				fname = 'clipboard_%s.txt' % (datetime.datetime.utcnow().strftime("%Y_%m_%d_%H%MZ"))
+			with open(fname, 'a+') as f:
+				f.write(str(fmtdata.dataobj))
+
+		msg = RDP_CLIPBOARD_DATA_TXT(data=fmtdata.dataobj, datatype=self.__requested_format)
+		await self.send_user_data(msg)
+		self.clipboard.data = msg
 
 	async def process_channel_data(self, data):
 		channeldata = CHANNEL_PDU_HEADER.from_bytes(data)
@@ -260,40 +326,22 @@ class RDPECLIPChannel(Channel):
 				traceback.print_exc()
 				return None,e
 	
-	async def get_current_clipboard_text(self):
-		if self.__current_clipboard_data is None:
-			return ''
-		return str(self.__current_clipboard_data.data)
-
-	async def set_current_clipboard_text(self, text:str):
-		data = RDP_CLIPBOARD_DATA_TXT()
-		data.datatype = CLIPBRD_FORMAT.CF_UNICODETEXT
-		data.data = text
-		await self.set_clipboard_data(data)
-	
-
-	async def set_clipboard_data(self, data, force_refresh = True):
-		if data == self.__current_clipboard_data and force_refresh is False:
-			return
-
+	async def _send_format_list(self, data:RDP_CLIPBOARD_DATA):
 		fmtl = CLIPRDR_FORMAT_LIST()
-		for fmtid in [CLIPBRD_FORMAT.CF_UNICODETEXT]: #CLIPBRD_FORMAT.CF_TEXT, CLIPBRD_FORMAT.CF_OEMTEXT
-			if CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES not in self.server_general_caps.generalFlags:
-				name = CLIPRDR_LONG_FORMAT_NAME()
-				name.formatId = data.datatype
-			else:
-				name = CLIPRDR_SHORT_FORMAT_NAME()
-				name.formatId = data.datatype
-			fmtl.templist.append(name)
+		name = self._generate_format_name(data.datatype, self.clipboard.formats[data.datatype])
+		fmtl.templist.append(name)
 		msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_LIST, 0, fmtl)
+		logger.debug(f'Sending CB_FORMAT_LIST: {repr(fmtl)}')
+		logger.debug(f'Serialized message: {msg.hex()}')
 		await self.fragment_and_send(msg)
-
-		self.__current_clipboard_data = data
 
 	async def process_user_data(self, data):
 		#print('clipboard out! %s' % data)
 		if data.type == RDPDATATYPE.CLIPBOARD_DATA_TXT:
-			await self.set_clipboard_data(data, False)
+			await self.clipboard.set_data(data, False)
 				
 		else:
 			logger.debug('Unhandled data type in! %s' % data.type)
+
+	async def on_copy(self, data:RDP_CLIPBOARD_DATA):
+		await self._send_format_list(data)
