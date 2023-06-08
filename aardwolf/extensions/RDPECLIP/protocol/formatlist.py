@@ -3,7 +3,7 @@ import io
 import enum
 
 # https://docs.microsoft.com/en-us/windows/win32/dataxchg/standard-clipboard-formats?redirectedfrom=MSDN
-class CLIPBRD_FORMAT(enum.Enum):
+class CLIPBRD_FORMAT(enum.IntEnum):
 	UNKNOWN = 0xFFFF
 	CF_BITMAP = 2 #A handle to a bitmap (HBITMAP).
 	CF_DIB = 8 #	A memory object containing a BITMAPINFO structure followed by the bitmap bits.
@@ -114,7 +114,11 @@ class CLIPRDR_SHORT_FORMAT_NAME:
 		self.clpfmt = None #stored for unknown data formats
 
 	def to_bytes(self):
-		t = self.formatId.value.to_bytes(4, byteorder='little', signed=False)
+		if isinstance(self.formatId, int):
+			t = self.formatId.to_bytes(4, byteorder='little', signed=False)
+		else:
+			t = self.formatId.value.to_bytes(4, byteorder='little', signed=False)
+
 		if self.encoding == 'ascii':
 			fn = self.formatName[:32]
 		else:
@@ -158,9 +162,9 @@ class CLIPRDR_LONG_FORMAT_NAME:
 
 	def to_bytes(self):
 		if self.wszFormatName is None or self.wszFormatName == '':
-			fn = b'\x00'
+			fn = b'\x00\x00'
 		else:
-			fn = self.wszFormatName.encode('utf-16-le')
+			fn = self.wszFormatName.encode('utf-16-le') + b'\x00\x00'
 		if isinstance(self.formatId, int):
 			t = self.formatId.to_bytes(4, byteorder='little', signed=False)
 		else:
@@ -181,16 +185,10 @@ class CLIPRDR_LONG_FORMAT_NAME:
 		except:
 			msg.formatId = CLIPBRD_FORMAT.UNKNOWN
 		
-		t = buff.read(1)
-		if t == b'\x00':
-			msg.wszFormatName = ''
-		else:
-			# this is arbitrary, thank you documentation...
-			for _ in range(255):
-				t += buff.read(1)
-				if t.find(b'\x00\x00\x00'):
-					break	
-			msg.wszFormatName = t.decode('utf-16-le').replace('\x00', '')
+		t = buff.read(2)
+		while t[-2:] != b'\x00\x00':
+			t += buff.read(2)
+		msg.wszFormatName = t.decode('utf-16-le').replace('\x00', '')
 		return msg
 
 	def __repr__(self):
