@@ -8,7 +8,7 @@ from aardwolf import logger
 from aardwolf.channels import Channel
 from aardwolf.protocol.T124.userdata.constants import ChannelOption
 from aardwolf.extensions.RDPECLIP.protocol import *
-from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_GENERAL_CAPABILITY, CB_GENERAL_FALGS
+from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_GENERAL_CAPABILITY, CB_GENERAL_FLAGS
 from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
 from aardwolf.commons.queuedata import RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
@@ -32,7 +32,7 @@ class RDPECLIPChannel(Channel):
 		self.supported_formats = [CLIPBRD_FORMAT.CF_UNICODETEXT] #, CLIPBRD_FORMAT.CF_HDROP
 		self.server_caps = None
 		self.server_general_caps = None
-		self.client_general_caps_flags = CB_GENERAL_FALGS.HUGE_FILE_SUPPORT_ENABLED | CB_GENERAL_FALGS.FILECLIP_NO_FILE_PATHS | CB_GENERAL_FALGS.STREAM_FILECLIP_ENABLED #| CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES # CB_GENERAL_FALGS.CAN_LOCK_CLIPDATA | #| CB_GENERAL_FALGS.USE_LONG_FORMAT_NAMES
+		self.client_general_caps_flags = CB_GENERAL_FLAGS.HUGE_FILE_SUPPORT_ENABLED | CB_GENERAL_FLAGS.FILECLIP_NO_FILE_PATHS | CB_GENERAL_FLAGS.STREAM_FILECLIP_ENABLED #| CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES # CB_GENERAL_FLAGS.CAN_LOCK_CLIPDATA | #| CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES
 		self.current_server_formats = {}
 		self.__requested_format = None
 		self.__current_clipboard_data:RDP_CLIPBOARD_DATA_TXT = None

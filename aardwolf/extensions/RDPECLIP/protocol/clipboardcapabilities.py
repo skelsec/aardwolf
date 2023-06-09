@@ -9,7 +9,7 @@ class CB_CAPS_VERSION(enum.Enum):
 	VERSION_1 = 0x00000001 #Version 1
 	VERSION_2 = 0x00000002 #Version 2
 
-class CB_GENERAL_FALGS(enum.IntFlag):
+class CB_GENERAL_FLAGS(enum.IntFlag):
 	USE_LONG_FORMAT_NAMES = 0x00000002 #The Long Format Name variant of the Format List PDU is supported for exchanging updated format names. If this flag is not set, the Short Format Name variant MUST be used. If this flag is set by both protocol endpoints, then the Long Format Name variant MUST be used.
 	STREAM_FILECLIP_ENABLED = 0x00000004 #File copy and paste using stream-based operations are supported using the File Contents Request PDU and File Contents Response PDU.
 	FILECLIP_NO_FILE_PATHS = 0x00000008 #Indicates that any description of files to copy and paste MUST NOT include the source path of the files.
@@ -21,7 +21,7 @@ class CLIPRDR_GENERAL_CAPABILITY:
 		self.capabilitySetType:CAPSTYPE = CAPSTYPE.GENERAL
 		self.lengthCapability:int = 12
 		self.version:CB_CAPS_VERSION = CB_CAPS_VERSION.VERSION_2
-		self.generalFlags:CB_GENERAL_FALGS = 0
+		self.generalFlags:CB_GENERAL_FLAGS = 0
 
 	def to_bytes(self):
 		t = self.capabilitySetType.value.to_bytes(2, byteorder='little', signed = False)
@@ -40,7 +40,7 @@ class CLIPRDR_GENERAL_CAPABILITY:
 		msg.capabilitySetType = CAPSTYPE(int.from_bytes(buff.read(2), byteorder='little', signed = False))
 		msg.lengthCapability = int.from_bytes(buff.read(2), byteorder='little', signed = False)
 		msg.version = CB_CAPS_VERSION(int.from_bytes(buff.read(4), byteorder='little', signed = False))
-		msg.generalFlags = CB_GENERAL_FALGS(int.from_bytes(buff.read(4), byteorder='little', signed = False))
+		msg.generalFlags = CB_GENERAL_FLAGS(int.from_bytes(buff.read(4), byteorder='little', signed = False))
 		return msg
 
 	def __repr__(self):
