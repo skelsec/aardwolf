@@ -148,13 +148,13 @@ class CLIPRDR_FILEDESCRIPTOR:
 		self.flags:FD_FLAGS = None
 		self.reserved1:bytes = b'\x00'*32
 		self.fileAttributes:FILE_ATTRIBUTE = None
-		self.reserved2:bytes = None
-		self.lastWriteTime:int = None
-		self.fileSizeHigh:int = None
-		self.fileSizeLow:int = None
+		self.reserved2:bytes = b'\x00'*16
+		self.lastWriteTime:int = 0
+		self.fileSizeHigh:int = 0
+		self.fileSizeLow:int = 0
 		self.fileName:str = None #520 bytes, 260 chars null term
 
-		self.fileSize:int =None
+		self.fileSize:int =0
 
 	def to_bytes(self):
 		if self.fileSize is not None:
@@ -168,7 +168,7 @@ class CLIPRDR_FILEDESCRIPTOR:
 		t += self.lastWriteTime.to_bytes(8, byteorder='little', signed=False)
 		t += self.fileSizeHigh.to_bytes(4, byteorder='little', signed=False)
 		t += self.fileSizeLow.to_bytes(4, byteorder='little', signed=False)
-		t += self.fileName.encode('utf-16-le').ljust(b'\x00',520)
+		t += self.fileName.encode('utf-16-le').ljust(520, b'\x00')
 		return t
 
 	@staticmethod
@@ -204,7 +204,7 @@ class CLIPRDR_FILEDESCRIPTOR:
 
 class CLIPRDR_FILELIST:
 	def __init__(self):
-		self.cItems:MAPPING_MODE = None
+		self.cItems:int = None
 		self.fileDescriptorArray:List[CLIPRDR_FILEDESCRIPTOR] = []
 
 	def to_bytes(self):
