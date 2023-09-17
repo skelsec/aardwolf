@@ -10,7 +10,10 @@ class CLIPRDR_FILECONTENTS_RESPONSE:
 
 	def to_bytes(self):
 		t = self.streamId.to_bytes(4, byteorder='little', signed = False)
-		t += self.requestedFileContentsData
+		if isinstance(self.requestedFileContentsData, int):
+			t += self.requestedFileContentsData.to_bytes(8, byteorder='little', signed = False)
+		else:
+			t += self.requestedFileContentsData
 		return t
 
 	@staticmethod

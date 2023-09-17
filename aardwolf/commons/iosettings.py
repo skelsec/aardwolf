@@ -1,4 +1,5 @@
 from aardwolf.extensions.RDPECLIP.channel import RDPECLIPChannel
+from aardwolf.extensions.RDPECLIP.clipboard import Clipboard
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
 from aardwolf.commons.queuedata.constants import VIDEO_FORMAT
 from aardwolf.protocol.T125.extendedinfopacket import PERF
@@ -58,6 +59,7 @@ class RDPIOSettings:
 		# set it to true to have a file created, or to a string with a file path
 		# 
 		self.clipboard_store_data = None
+		self.clipboard = Clipboard()
 
 		# determines how often the client polls for desktop changes
 		self.vnc_fps = 10
