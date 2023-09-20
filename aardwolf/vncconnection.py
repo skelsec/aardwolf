@@ -4,7 +4,6 @@
 # TODO: Better keyboard handling
 # TODO: Add more rectangle decoding options
 # TODO: Add more security handshake options (all of the RFC is already implemented, so only custom are to be added)
-# TODO: Add mouse scroll functionality (QT5 client needs to be modified for that)
 
 import io
 import asyncio
@@ -479,8 +478,6 @@ class VNCConnection:
 				return image
 			elif encoding == VIDEO_FORMAT.RAW:
 				return image.tobytes()
-			elif encoding == VIDEO_FORMAT.QT5:
-				return ImageQt(image)
 			elif encoding == VIDEO_FORMAT.PNG:
 				img_byte_arr = io.BytesIO()
 				image.save(img_byte_arr, format='PNG')
@@ -621,9 +618,6 @@ class VNCConnection:
 			
 			if self.iosettings.video_out_format == VIDEO_FORMAT.RAW:
 				image = image.tobytes()
-
-			elif self.iosettings.video_out_format == VIDEO_FORMAT.QT5:
-				image = ImageQt(image)
 			
 			elif self.iosettings.video_out_format == VIDEO_FORMAT.PNG:
 				img_byte_arr = io.BytesIO()

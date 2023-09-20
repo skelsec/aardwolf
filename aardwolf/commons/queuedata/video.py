@@ -23,7 +23,7 @@ class RDP_VIDEO:
 		self.data:bytes = None
 	
 	@staticmethod
-	def from_bitmapdata(bitmapdata:TS_BITMAP_DATA, output_format = VIDEO_FORMAT.QT5):
+	def from_bitmapdata(bitmapdata:TS_BITMAP_DATA, output_format = VIDEO_FORMAT.PIL):
 		res = RDP_VIDEO()
 		res.type = RDPDATATYPE.VIDEO
 		res.x = bitmapdata.destLeft
@@ -38,9 +38,6 @@ class RDP_VIDEO:
 
 		elif output_format == VIDEO_FORMAT.RAW:
 			image = image_pil.tobytes()
-
-		elif output_format == VIDEO_FORMAT.QT5:
-			image = ImageQt(image_pil)
 		
 		elif output_format == VIDEO_FORMAT.PNG:
 			img_byte_arr = io.BytesIO()

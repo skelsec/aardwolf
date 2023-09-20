@@ -45,8 +45,8 @@ setup(
 
 	install_requires=[
 		'unicrypto>=0.0.10',
-		'asyauth>=0.0.13',
-		'asysocks>=0.2.5',
+		'asyauth>=0.0.16',
+		'asysocks>=0.2.9',
 		'tqdm',
 		'colorama',
 		'asn1crypto',

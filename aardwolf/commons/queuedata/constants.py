@@ -5,7 +5,6 @@ class VIDEO_FORMAT(enum.Enum):
 	RAW = 0 # raw bytes
 	PIL = 1 # Pillow (PIL) Image object
 	PNG = 2 # PNG file bytes
-	QT5 = 3 # pyQt5
 
 class MOUSEBUTTON(enum.Enum):
 	MOUSEBUTTON_HOVER = -1

@@ -1141,9 +1141,6 @@ class RDPConnection:
 				return image
 			elif encoding == VIDEO_FORMAT.RAW:
 				return image.tobytes()
-			elif encoding == VIDEO_FORMAT.QT5:
-				from PIL.ImageQt import ImageQt
-				return ImageQt(image)
 			elif encoding == VIDEO_FORMAT.PNG:
 				img_byte_arr = io.BytesIO()
 				image.save(img_byte_arr, format='PNG')

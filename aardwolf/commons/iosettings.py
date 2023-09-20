@@ -23,7 +23,7 @@ class RDPIOSettings:
 		# Video settings used by both RDP and VNC
 		self.video_width = 1024
 		self.video_height = 768
-		self.video_out_format = VIDEO_FORMAT.QT5 # the recatngle image format which will be sent via the queue
+		self.video_out_format = VIDEO_FORMAT.PIL # the recatngle image format which will be sent via the queue
 		
 		# Video settings used only by RDP
 		# minimum supported BPP
