@@ -34,6 +34,7 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: "curl --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
           CIBW_ENVIRONMENT: 'PATH="$PATH:$HOME/.cargo/bin"'
           CIBW_PRERELEASE_PYTHONS: False
+          CIBW_SKIP: "*-win32 *-musllinux_*"
         #    ...
         with:
           package-dir: .
