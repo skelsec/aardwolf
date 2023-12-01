@@ -1,20 +1,12 @@
 ![Supported Python versions](https://img.shields.io/badge/python-3.7+-blue.svg) [![Twitter](https://img.shields.io/twitter/follow/skelsec?label=skelsec&style=social)](https://twitter.com/intent/follow?screen_name=skelsec)
 
-:triangular_flag_on_post: This is the public repository of aardwolf, for latest version and updates please consider supporting us through https://porchetta.industries/
+## :triangular_flag_on_post: Sponsors
+
+If you like this project, consider sponsoring it on GitHub! [Sponsors](https://github.com/sponsors/skelsec/)
 
 # AARDWOLF - Asynchronous RDP/VNC client in Python (headless)
 This project is aimed to play around the RDP and VNC protocols.  
 Project contains no GUI, for a GUI client please check out [`aardwolfgui`](https://github.com/skelsec/aardwolfgui)
-
-## :triangular_flag_on_post: Sponsors
-
-If you want to sponsors this project and have the latest updates on this project, latest issues fixed, latest features, please support us on https://porchetta.industries/
-
-## Official Discord Channel
-
-Come hang out on Discord!
-
-[![Porchetta Industries](https://discordapp.com/api/guilds/736724457258745996/widget.png?style=banner3)](https://discord.gg/ycGXUxy)
 
 # Important
 This is a headless client, for GUI functionality use the `aardwolfgui` package.

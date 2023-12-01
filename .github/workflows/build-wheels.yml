@@ -1,0 +1,35 @@
+name: Build Wheels
+# Description:
+# Sady it was not ppossible to create a pure-python package for this project
+# The frame decompressor code is written in Rust, which adds additional 
+# complications to the build process and to packaging the project.
+
+on:
+  push:
+    branches:
+      - main # Trigger on push to master branch
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, windows-2019, macos-11]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.16.2
+        # env:
+        #   CIBW_SOME_OPTION: value
+        #    ...
+        with:
+          package-dir: .
+          output-dir: wheelhouse
+          config-file: "{package}/pyproject.toml"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          path: ./wheelhouse/*.whl
