@@ -58,6 +58,7 @@ from aardwolf.protocol.T128.fontlistpdu import TS_FONT_LIST_PDU
 from aardwolf.protocol.T128.inputeventpdu import TS_SHAREDATAHEADER, TS_INPUT_EVENT, TS_INPUT_PDU_DATA
 from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
 from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
+from aardwolf.protocol.T128.shutdownreqpdu import TS_SHUTDOWN_REQ_PDU
 from aardwolf.protocol.T128.share import PDUTYPE, STREAM_TYPE, PDUTYPE2
 
 
@@ -124,6 +125,7 @@ class RDPConnection:
 		self.cryptolayer:RDPCryptoLayer = None
 		self.__desktop_buffer = None
 		self.desktop_buffer_has_data = False
+		self.__terminate_called = False
 
 		self.__vk_to_sc = {
 			'VK_BACK'     : 14,
@@ -176,14 +178,25 @@ class RDPConnection:
 
 	
 	async def terminate(self):
+		"""sends a shutdown request to the server and terminates the connection"""
 		try:
+			if self.__terminate_called is True:
+				return True, None
+			self.__terminate_called = True
+
+			will_shutdown, err = await self.send_disconnect()
+			if err is not None:
+				logger.warning('Error while requesting shutdown')
+			else:
+				if will_shutdown is False:
+					logger.warning('Server refused to shutdown, proceeding with termination anyway...')
+
 			for name in self.__joined_channels:
 				await self.__joined_channels[name].disconnect()
 			
 			if self.ext_out_queue is not None:
 				# signaling termination via ext_out_queue
-				await self.ext_out_queue.put(None)
-				
+				await self.ext_out_queue.put(None)			
 			
 			if self.__external_reader_task is not None:
 				self.__external_reader_task.cancel()
@@ -917,6 +930,64 @@ class RDPConnection:
 			return True, None
 		except Exception as e:
 			return None, e
+		
+	async def send_disconnect(self):
+		"""Sends a disconnect request to the server. This will NOT close the connection!"""
+		try:
+			data_start_offset = 0
+			if self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].encryptionLevel == 1:
+				# encryptionLevel == 1 means that server data is not encrypted. This results in this part of the negotiation 
+				# that the server sends data to the client with an empty security header (which is not documented....)
+				data_start_offset = 4
+			
+			data_hdr = TS_SHAREDATAHEADER()
+			data_hdr.shareID = 0x103EA
+			data_hdr.streamID = STREAM_TYPE.MED
+			data_hdr.pduType2 = PDUTYPE2.SHUTDOWN_REQUEST
+			
+			
+			cli_input = TS_INPUT_PDU_DATA()
+			cli_input.slowPathInputEvents.append(TS_SHUTDOWN_REQ_PDU())
+
+			sec_hdr = None
+			if self.cryptolayer is not None:
+				sec_hdr = TS_SECURITY_HEADER()
+				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+				sec_hdr.flagsHi = 0
+
+			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			data, err = await self.__joined_channels['MCS'].out_queue.get()
+			if err is not None:
+				raise err
+			
+			server_shutdown_reply = False
+			data = data[data_start_offset:]
+			shc = TS_SHARECONTROLHEADER.from_bytes(data)
+			if shc.pduType == PDUTYPE.DATAPDU:
+				shd = TS_SHAREDATAHEADER.from_bytes(data)
+				if shd.pduType2 == PDUTYPE2.SHUTDOWN_DENIED:
+					# server denied ur request
+					server_shutdown_reply = False
+				elif shd.pduType2 == PDUTYPE2.CONTROL:
+					res_control = TS_CONTROL_PDU.from_bytes(data)
+					if res_control.action == CTRLACTION.COOPERATE:
+						# server will cooperate
+						server_shutdown_reply = True
+					else:
+						# I dunno what the server is thinking
+						server_shutdown_reply = False
+
+				else:
+					# I dunno what the server is thinking
+					# Maybe we consumed the wrong packet?
+					server_shutdown_reply = False
+			else:
+				raise Exception('Unexpected reply! %s' % shc.pduType.name)
+
+			
+			return server_shutdown_reply, None
+		except Exception as e:
+			return None, e
 
 	async def __x224_reader(self):
 		# recieves X224 packets and fastpath packets, performs decryption if necessary then dispatches each packet to 
@@ -1285,7 +1356,7 @@ async def amain():
 		from aardwolf.extensions.RDPEDYC.channel import RDPEDYCChannel
 
 		iosettings = RDPIOSettings()
-		url = 'rdp+ntlm-password://TEST\\Administrator:Passw0rd!1@10.10.10.102'
+		url = 'rdp+ntlm-password://TEST2\\Administrator:Passw0rd!1@192.168.85.131'
 		rdpurl = RDPConnectionFactory.from_url(url, iosettings)
 		conn = rdpurl.get_connection(iosettings)
 		_, err = await conn.connect()
