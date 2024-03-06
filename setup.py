@@ -10,7 +10,7 @@ if mo:
 	verstr = mo.group(1)
 else:
 	raise RuntimeError("Unable to find version string in %s." % (VERSIONFILE,))
-print(find_packages())
+
 setup(
 	# Application name:
 	name="aardwolf",
@@ -23,7 +23,7 @@ setup(
 	author_email="info@skelsecprojects.com",
 
 	# Packages
-	packages=find_packages(),
+	packages=find_packages(include=['aardwolf.utils.rlers.src*']),
 
 	# Include additional files into the package
 	include_package_data=True,
