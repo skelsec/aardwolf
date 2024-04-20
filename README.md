@@ -1,8 +1,10 @@
-![Supported Python versions](https://img.shields.io/badge/python-3.7+-blue.svg) [![Twitter](https://img.shields.io/twitter/follow/skelsec?label=skelsec&style=social)](https://twitter.com/intent/follow?screen_name=skelsec)
+![Supported Python versions](https://img.shields.io/badge/python-3.8+-blue.svg) [![Twitter](https://img.shields.io/twitter/follow/skelsec?label=skelsec&style=social)](https://twitter.com/intent/follow?screen_name=skelsec)
 
-## :triangular_flag_on_post: Sponsors
+## :triangular_flag_on_post: In-browser version
+[![Twitter](https://img.shields.io/twitter/follow/octopwn?label=octopwn&style=social)](https://twitter.com/intent/follow?screen_name=octopwn)
+Did you know this also works in the browser?  
+A version of this library is included in the in-browser pentest suite [Octopwn](https://www.octopwn.com)  
 
-If you like this project, consider sponsoring it on GitHub! [Sponsors](https://github.com/sponsors/skelsec/)
 
 # AARDWOLF - Asynchronous RDP/VNC client in Python (headless)
 This project is aimed to play around the RDP and VNC protocols.  
@@ -37,7 +39,7 @@ As usual the scripts take the target/scredentials in URL format. Below some exam
  - `vnc+plain://Passw0rd!1@10.10.10.103`  
  VNC client with VNC authentication using password connecting to RDP server `10.10.10.103`
  - `vnc+plain://:admin:aaa@10.10.10.103`  
- VNC client with VNC authentication using password `admin:aa` connecting to RDP server `10.10.10.103`. Note that if the password contains `:` char you will have to prepend the password with `:`
+ VNC client with VNC authentication using password `admin:aaa` connecting to RDP server `10.10.10.103`. Note that if the password contains `:` char you will have to prepend the password with `:`
 
 # Kudos
  - Sylvain Peyrefitte ([@citronneur](https://twitter.com/citronneur)) [`rdpy`](https://github.com/citronneur/rdpy). The decompression code and the QT image magic was really valuable.
