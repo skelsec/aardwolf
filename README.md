@@ -1,10 +1,10 @@
 ![Supported Python versions](https://img.shields.io/badge/python-3.8+-blue.svg) [![Twitter](https://img.shields.io/twitter/follow/skelsec?label=skelsec&style=social)](https://twitter.com/intent/follow?screen_name=skelsec)
 
 ## :triangular_flag_on_post: In-browser version
-[![Twitter](https://img.shields.io/twitter/follow/octopwn?label=octopwn&style=social)](https://twitter.com/intent/follow?screen_name=octopwn)
+[![Twitter](https://img.shields.io/twitter/follow/octopwn?label=octopwn&style=social)](https://twitter.com/intent/follow?screen_name=octopwn)  
+
 Did you know this also works in the browser?  
 A version of this library is included in the in-browser pentest suite [Octopwn](https://www.octopwn.com)  
-
 
 # AARDWOLF - Asynchronous RDP/VNC client in Python (headless)
 This project is aimed to play around the RDP and VNC protocols.  
