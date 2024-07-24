@@ -1,5 +1,6 @@
 
 import io
+import ssl
 import copy
 import typing
 import asyncio
@@ -269,7 +270,12 @@ class RDPConnection:
 				self.x224_flag = self.x224_connection_reply.flags
 				logger.debug('Server selected protocol: %s' % self.x224_protocol)
 				if SUPP_PROTOCOLS.SSL in self.x224_protocol or SUPP_PROTOCOLS.HYBRID in self.x224_protocol or SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
-					await self.__connection.wrap_ssl()
+					ssl_ctx = ssl.create_default_context()
+					ssl_ctx.check_hostname = False
+					ssl_ctx.verify_mode = ssl.CERT_NONE
+					if self.target.unsafe_ssl: ssl_ctx.set_ciphers('ALL:@SECLEVEL=0')
+					
+					await self.__connection.wrap_ssl(ssl_ctx=ssl_ctx)
 
 				# if the server expects HYBRID/HYBRID_EX authentication we do that here
 				# This is basically credSSP
