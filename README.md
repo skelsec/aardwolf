@@ -1,7 +1,9 @@
 ![Supported Python versions](https://img.shields.io/badge/python-3.8+-blue.svg) [![Twitter](https://img.shields.io/twitter/follow/skelsec?label=skelsec&style=social)](https://twitter.com/intent/follow?screen_name=skelsec)
 
-## :triangular_flag_on_post: In-browser version
-[![Twitter](https://img.shields.io/twitter/follow/octopwn?label=octopwn&style=social)](https://twitter.com/intent/follow?screen_name=octopwn)  
+## :triangular_flag_on_post: Sponsors
+
+If you like this project, consider purchasing licenses of [OctoPwn](https://octopwn.com/), our full pentesting suite that runs in your browser!  
+For notifications on new builds/releases and other info, hop on to our [Discord](https://discord.gg/PM8utcNxMS)
 
 Did you know this also works in the browser?  
 A version of this library is included in the in-browser pentest suite [Octopwn](https://www.octopwn.com)  
@@ -9,6 +11,12 @@ A version of this library is included in the in-browser pentest suite [Octopwn](
 # AARDWOLF - Asynchronous RDP/VNC client in Python (headless)
 This project is aimed to play around the RDP and VNC protocols.  
 Project contains no GUI, for a GUI client please check out [`aardwolfgui`](https://github.com/skelsec/aardwolfgui)
+
+
+## :triangular_flag_on_post: Runs in the browser
+
+This project, alongside with many other pentester tools runs in the browser with the power of OctoPwn!  
+Check out the community version at [OctoPwn - Live](https://live.octopwn.com/)
 
 # Important
 This is a headless client, for GUI functionality use the `aardwolfgui` package.

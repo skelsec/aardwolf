@@ -1,6 +1,6 @@
 name: Build Wheels
 # Description:
-# Sady it was not ppossible to create a pure-python package for this project
+# Sady it was not possible to create a pure-python package for this project
 # The frame decompressor code is written in Rust, which adds additional 
 # complications to the build process and to packaging the project.
 
@@ -44,3 +44,24 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
+
+      - uses: sarisia/actions-status-discord@v1
+        if: always()
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          content: |
+            ${{ github.event_name == 'push' && format('Hey @here! A new commit was pushed to {0}!', github.repository) || '' }}
+            ${{ github.event_name == 'pull_request' && format('Hey @here! A new pull request has been opened on {0}!', github.repository) || '' }}
+            ${{ github.event_name == 'release' && format('Hey @here! A new release was created for project {0}!', github.event.repository.name) || '' }}
+          title: |
+            ${{ github.event_name == 'push' && 'Push Notification' || '' }}
+            ${{ github.event_name == 'pull_request' && 'Pull Request Notification' || '' }}
+            ${{ github.event_name == 'release' && 'Release Notification' || '' }}
+          color: |
+            ${{ github.event_name == 'push' && '0x00ff00' || '' }}
+            ${{ github.event_name == 'pull_request' && '0xff0000' || '' }}
+            ${{ github.event_name == 'release' && '0x0000ff' || '' }}
+          url: "${{ github.server_url }}/${{ github.repository }}"
+          username: GitHub Actions
+          avatar_url: "https://avatars.githubusercontent.com/u/19204702"
