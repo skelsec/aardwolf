@@ -38,10 +38,12 @@ class RDPTarget(UniTarget):
 			domain:str = None, 
 			proxies:List[UniProxyTarget] = None, 
 			protocol:UniProto = UniProto.CLIENT_TCP, 
+			unsafe_ssl:bool = False,
 			dialect:RDPConnectionDialect = RDPConnectionDialect.RDP,
 			dns:str = None):
 		UniTarget.__init__(self, ip, port, protocol, timeout, hostname = hostname, proxies = proxies, domain = domain, dc_ip = dc_ip, dns=dns)
 		self.dialect = dialect
+		self.unsafe_ssl = unsafe_ssl
 		if self.dialect == RDPConnectionDialect.VNC:
 			self.port = 5900
 
@@ -58,6 +60,7 @@ class RDPTarget(UniTarget):
 			domain = self.domain, 
 			proxy = copy.deepcopy(self.proxy),
 			protocol = self.protocol,
+			unsafe_ssl = self.unsafe_ssl,
 			dialect = self.dialect,
 			dns=self.dns
 		)
