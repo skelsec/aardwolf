@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e -x
 
-PYBINS=("/opt/python/cp38-cp38/bin" "/opt/python/cp39-cp39/bin" "/opt/python/cp310-cp310/bin" "/opt/python/cp311-cp311/bin")
+PYBINS=("/opt/python/cp38-cp38/bin" "/opt/python/cp39-cp39/bin" "/opt/python/cp310-cp310/bin" "/opt/python/cp311-cp311/bin" "/opt/python/cp312-cp312/bin")
 RUST_CHANNEL=stable
 
 ls -la /opt/python/

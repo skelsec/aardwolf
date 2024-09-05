@@ -5,9 +5,6 @@
 If you like this project, consider purchasing licenses of [OctoPwn](https://octopwn.com/), our full pentesting suite that runs in your browser!  
 For notifications on new builds/releases and other info, hop on to our [Discord](https://discord.gg/PM8utcNxMS)
 
-Did you know this also works in the browser?  
-A version of this library is included in the in-browser pentest suite [Octopwn](https://www.octopwn.com)  
-
 # AARDWOLF - Asynchronous RDP/VNC client in Python (headless)
 This project is aimed to play around the RDP and VNC protocols.  
 Project contains no GUI, for a GUI client please check out [`aardwolfgui`](https://github.com/skelsec/aardwolfgui)
