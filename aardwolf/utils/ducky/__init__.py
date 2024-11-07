@@ -136,7 +136,7 @@ class DuckyExecutorBase:
 		#await asyncio.sleep(self.default_delay)
 
 	async def do_shift(self, data = []):
-		print('SHIFT + %s' % repr(data))
+		#print('SHIFT + %s' % repr(data))
 		if len(data) > 0:
 			data.insert(0, 'VK_LSHIFT')
 			await self.multi_key_press(data)
@@ -144,7 +144,7 @@ class DuckyExecutorBase:
 			await self.keydispatch('VK_LSHIFT')
 
 	async def do_control(self, data = []):
-		print('CTRL + %s' % repr(data))
+		#print('CTRL + %s' % repr(data))
 		if len(data) > 0:
 			data.insert(0, 'VK_LCONTROL')
 			await self.multi_key_press(data)
@@ -152,7 +152,7 @@ class DuckyExecutorBase:
 			await self.keydispatch('VK_LCONTROL')
 
 	async def do_alt(self, data = []):
-		print('ALT + %s' % repr(data))
+		#print('ALT + %s' % repr(data))
 		if len(data) > 0:
 			data.insert(0, 'VK_LMENU')
 			await self.multi_key_press(data)
