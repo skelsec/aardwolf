@@ -25,6 +25,11 @@ class RDPScreenshotRes:
 
 	def to_line(self, separator = '\t'):
 		return base64.b64encode(self.screendata).decode()
+	
+	def to_dict(self):
+		return {
+			'screendata' : base64.b64encode(self.screendata).decode()
+		}
 
 class RDPScreenshotScanner:
 	def __init__(self, factory:RDPConnectionFactory):

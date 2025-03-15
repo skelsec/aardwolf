@@ -29,6 +29,16 @@ class RDPCapabilitiesRes:
 			str(self.hybrid),
 			str(self.hybridex),
 		])
+	
+	def to_dict(self):
+		return {
+			'restrictedadmin' : str(self.restrictedadmin),
+			'restrictedauth' : str(self.restrictedauth),
+			'rdp' : str(self.rdp),
+			'ssl' : str(self.ssl),
+			'hybrid' : str(self.hybrid),
+			'hybridex' : str(self.hybridex),
+		}
 
 class RDPCapabilitiesScanner:
 	def __init__(self, factory:RDPConnectionFactory):

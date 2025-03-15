@@ -44,7 +44,7 @@ class RDPTarget(UniTarget):
 		UniTarget.__init__(self, ip, port, protocol, timeout, hostname = hostname, proxies = proxies, domain = domain, dc_ip = dc_ip, dns=dns)
 		self.dialect = dialect
 		self.unsafe_ssl = unsafe_ssl
-		if self.dialect == RDPConnectionDialect.VNC:
+		if self.dialect == RDPConnectionDialect.VNC and self.port is None:
 			self.port = 5900
 
 	def to_target_string(self):
