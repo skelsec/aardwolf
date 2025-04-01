@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_namespace_packages, setup, find_packages
 from setuptools_rust import Binding, RustExtension
 import re
 
@@ -23,7 +23,7 @@ setup(
 	author_email="info@skelsecprojects.com",
 
 	# Packages
-	packages=find_packages(), #where='.', include=['aardwolf.utils.rlers.src*']
+	packages=find_packages(), #(include=['aardwolf', 'aardwolf.utils.rlers.src']), #where='.', include=['aardwolf.utils.rlers.src*']
 
 	# Include additional files into the package
 	include_package_data=True,

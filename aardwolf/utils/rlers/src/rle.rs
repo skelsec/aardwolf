@@ -25,21 +25,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+
 use std::io::{Cursor, Read};
-use byteorder::{ReadBytesExt, LittleEndian};
 use std::io::Error as IoError;
 use std::string::String;
-use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyTypeError;
-use pyo3::types::PyByteArray;
+use pyo3::types::{PyByteArray, PyBytes};
+use pyo3::{pyfunction, pymodule, PyResult, Python, wrap_pyfunction};
+use pyo3::types::PyModule;
+use pyo3::Bound;
 
-use pyo3::ffi::{Py_buffer, PyArg_ParseTuple, PyErr_SetString, PyExc_TypeError, Py_None, PyObject, PyExc_OverflowError};
-use pyo3::{exceptions, pyfunction, pymodule, PyResult, Python, wrap_pyfunction};
-use pyo3::exceptions::PyValueError;
-use pyo3::buffer::PyBuffer;
-use pyo3::types::PyModule; 
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum RdpErrorKind {
@@ -136,12 +133,6 @@ impl From<IoError> for Error {
     }
 }
 
-impl<T: TryFromPrimitive> From<TryFromPrimitiveError<T>> for Error {
-    fn from(_: TryFromPrimitiveError<T>) -> Self {
-        Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid enum conversion"))
-    }
-}
-
 pub type RdpResult<T> = Result<T, Error>;
 
 /// Try options is waiting try trait for the next rust
@@ -167,14 +158,29 @@ macro_rules! try_let {
     }
 }
 
+// Add these helper functions to replace byteorder functionality
+trait ReadExt: Read {
+    fn read_u8(&mut self) -> Result<u8, IoError> {
+        let mut buffer = [0u8; 1];
+        self.read_exact(&mut buffer)?;
+        Ok(buffer[0])
+    }
 
+    fn read_u16_le(&mut self) -> Result<u16, IoError> {
+        let mut buffer = [0u8; 2];
+        self.read_exact(&mut buffer)?;
+        Ok((buffer[0] as u16) | ((buffer[1] as u16) << 8))
+    }
+}
+
+impl<R: Read> ReadExt for R {}
 
 /// All this uncompress code
 /// Are directly inspired from the source code
 /// of rdesktop and diretly port to rust
 /// Need a little bit of refactoring for rust
 
-fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8]) -> RdpResult<()> {
+fn process_plane(mut input: &mut dyn Read, width: u32, height: u32, output: &mut [u8]) -> RdpResult<()> {
     let mut indexw;
 	let mut indexh= 0;
 	let mut code ;
@@ -332,7 +338,7 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 			0xF => {
 				opcode = code & 0xf;
 				if opcode < 9 {
-					count = input_cursor.read_u16::<LittleEndian>()?
+					count = input_cursor.read_u16_le()?
 				} else if opcode < 0xb {
 					count = 8
 				} else {
@@ -367,14 +373,14 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 				}
 			},
 			8 => {
-				colour1 = input_cursor.read_u16::<LittleEndian>()?;
-				colour2 = input_cursor.read_u16::<LittleEndian>()?;
+				colour1 = input_cursor.read_u16_le()?;
+				colour2 = input_cursor.read_u16_le()?;
 			},
 			3 => {
-				colour2 = input_cursor.read_u16::<LittleEndian>()?;
+				colour2 = input_cursor.read_u16_le()?;
 			},
 			6 | 7 => {
-				mix = input_cursor.read_u16::<LittleEndian>()?;
+				mix = input_cursor.read_u16_le()?;
 				opcode -= 5;
 			}
 			9 => {
@@ -468,7 +474,7 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 					repeat!(output[line.unwrap() + x] = colour2, count, x, width);
 				},
 				4 => {
-					repeat!(output[line.unwrap() + x] = input_cursor.read_u16::<LittleEndian>()?, count, x, width);
+					repeat!(output[line.unwrap() + x] = input_cursor.read_u16_le()?, count, x, width);
 				},
 				8 => {
 					repeat!({
@@ -524,7 +530,7 @@ pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
 	#########################################################################################################
 */
 
-
+#[allow(dead_code)]
 fn convert_rgb555_rgb32(decomp_buff: Vec<u8>, decomp_buff_size: usize, dst: &mut Vec<u8>, _dst_size: usize) {
     let mut j = 0;
     for i in (0..decomp_buff_size).step_by(2) {
@@ -537,6 +543,7 @@ fn convert_rgb555_rgb32(decomp_buff: Vec<u8>, decomp_buff_size: usize, dst: &mut
     }
 }
 
+#[allow(dead_code)]
 fn convert_rgb565_rgb32(decomp_buff: Vec<u8>, decomp_buff_size: usize, dst: &mut Vec<u8>, _dst_size: usize) {
     let mut j = 0;
     for i in (0..decomp_buff_size).step_by(2) {
@@ -549,6 +556,7 @@ fn convert_rgb565_rgb32(decomp_buff: Vec<u8>, decomp_buff_size: usize, dst: &mut
     }
 }
 
+#[allow(dead_code)]
 fn convert_rgb24_rgb32(decomp_buff: Vec<u8>, decomp_buff_size: usize, dst: &mut Vec<u8>, _dst_size: usize) {
     let mut j = 0;
     for i in (0..decomp_buff_size).step_by(3) {
@@ -575,14 +583,14 @@ fn decode_rre(rre_buff: Vec<u8>, rre_buff_size: usize, dst: &mut Vec<u8>, bypp: 
     let sub_rect_num_bytes = sub_rect_num*12;
     let rectangle_pixel_count = width * height;
     let rectangle_size = rectangle_pixel_count * bypp;
-    let mut sub_rectangle_pixel_count = 0;
-    let mut subrect_color_offset = 0;
-    let mut subwidth_bytes = 0;
-    let mut subx = 0u16;
-    let mut suby = 0u16;
-    let mut subwidth = 0u16;
-    let mut subheight = 0u16;
-    let mut substart = 0u16;
+    let mut sub_rectangle_pixel_count;
+    let mut subrect_color_offset;
+    let mut subwidth_bytes;
+    let mut subx;
+    let mut suby;
+    let mut subwidth;
+    let mut subheight;
+    let mut substart;
     
     if rectangle_size as usize > dst_size {
         return 1;
@@ -615,7 +623,7 @@ fn decode_rre(rre_buff: Vec<u8>, rre_buff_size: usize, dst: &mut Vec<u8>, bypp: 
         sub_rectangle_pixel_count = subwidth * subheight;
         subrect_color_offset = 8+i;
         
-        for j in 0..sub_rectangle_pixel_count {
+        for _j in 0..sub_rectangle_pixel_count {
             for y in 0..subheight {
                 substart = (subx + (suby+y) * width) * bypp;
                 if substart > dst_size as u16 || substart + subwidth_bytes > dst_size as u16 {
@@ -637,92 +645,81 @@ fn decode_rre(rre_buff: Vec<u8>, rre_buff_size: usize, dst: &mut Vec<u8>, bypp: 
 // *INDENT-ON*
 #[pyfunction]
 #[pyo3(name = "bitmap_decompress")]
-fn bitmap_decompress_wrapper(py: Python<'_>, input: PyBuffer<u8>, width: usize, height: usize, bpp: usize, is_compressed: usize) -> PyResult<&PyByteArray> {
-	// actually only handle 32 bpp
-
-	let mut data = input.to_vec(py).unwrap();
-	
-	if bpp == 32  {
-			// 32 bpp is straight forward
-			return Ok(
-				if is_compressed != 0  {
-					let mut result = vec![0 as u8; width as usize * height as usize * 4];
-					match rle_32_decompress(&data, width as u32, height as u32, &mut result){
-						Err(e) => {
-							return Err(PyTypeError::new_err("Decompression Error 32"));
-						},
-						Ok(x) => {
-							let output_as_bytes = PyByteArray::new(py, &result);
-							//return Ok(output_as_bytes);
-							output_as_bytes
-						}
-					}
-					
-				} else {
-					let output_as_bytes = PyByteArray::new(py, &data);
-					//return Ok(output_as_bytes);
-					output_as_bytes
-				}
-			)
-	}
-	if bpp == 16  {
-		// 16 bpp is more consumer
-		if is_compressed != 0 {
-			let mut result = vec![0 as u16; width as usize * height as usize * 2];
-			let res = match rle_16_decompress(&data, width as usize, height as usize, &mut result){
-				Err(e) => {
-					return Err(PyTypeError::new_err("Decompression Error 16"));
-				},
-				Ok(()) => {
-					let mut output_buffer = rgb565torgb32(&result, width as usize, height as usize);
-					let output_as_bytes = PyByteArray::new(py, &mut output_buffer);
-					return Ok(output_as_bytes)
-				},
-				
-			};
-			res
-			
-		} else {
-			let mut result = vec![0 as u16; width as usize * height as usize];
-			for i in 0..height {
-				for j in 0..width {
-					let src = (((height - i - 1) * width + j) * 2) as usize;
-					result[(i * width + j) as usize] = (data[src + 1] as u16) << 8 | data[src] as u16;
-				}
-			}
-			let mut output_buffer = rgb565torgb32(&result, width as usize, height as usize);
-			let output_as_bytes = PyByteArray::new(py, &mut output_buffer);
-			return Ok(output_as_bytes)
-		};
-			
-	}
-	return Err(PyTypeError::new_err("Unsupported bpp!"));
+fn bitmap_decompress_wrapper(py: Python<'_>, input: &[u8], width: usize, height: usize, bpp: usize, is_compressed: usize) -> PyResult<Py<PyByteArray>> {
+    // actually only handle 32 bpp
+    let data = input;
+    
+    if bpp == 32 {
+        // 32 bpp is straight forward
+        return Ok(
+            if is_compressed != 0 {
+                let mut result = vec![0 as u8; width * height * 4];
+                match rle_32_decompress(data, width as u32, height as u32, &mut result) {
+                    Err(_) => {
+                        return Err(PyTypeError::new_err("Decompression Error 32"));
+                    },
+                    Ok(_) => {
+                        PyByteArray::new(py, &result).into()
+                    }
+                }
+            } else {
+                PyByteArray::new(py, data).into()
+            }
+        )
+    }
+    if bpp == 16 {
+        // 16 bpp is more consumer
+        if is_compressed != 0 {
+            let mut result = vec![0 as u16; width * height * 2];
+            match rle_16_decompress(data, width, height, &mut result) {
+                Err(_) => {
+                    return Err(PyTypeError::new_err("Decompression Error 16"));
+                },
+                Ok(()) => {
+                    let output_buffer = rgb565torgb32(&result, width, height);
+                    return Ok(PyByteArray::new(py, &output_buffer).into())
+                },
+            };
+        } else {
+            let mut result = vec![0 as u16; width * height];
+            for i in 0..height {
+                for j in 0..width {
+                    let src = (((height - i - 1) * width + j) * 2) as usize;
+                    result[(i * width + j) as usize] = (data[src + 1] as u16) << 8 | data[src] as u16;
+                }
+            }
+            let output_buffer = rgb565torgb32(&result, width, height);
+            return Ok(PyByteArray::new(py, &output_buffer).into())
+        }
+    }
+    return Err(PyTypeError::new_err("Unsupported bpp!"));
 }
-
 
 #[pyfunction]
 #[pyo3(name = "mask_rgbx")]
-fn mask_rgbx_wrapper(py: Python<'_>, input: PyBuffer<u8>) -> PyResult<&PyByteArray> {
-    let mut output_buffer = vec![0 as u8; input.len_bytes() as usize];
-    convert_rgbx_rgba(input.to_vec(py).unwrap(), input.len_bytes(), &mut output_buffer);
-    return Ok(PyByteArray::new(py, &output_buffer));
+fn mask_rgbx_wrapper(py: Python<'_>, input: &[u8]) -> PyResult<Py<PyByteArray>> {
+    let data = input;
+    let mut output_buffer = vec![0 as u8; data.len()];
+    convert_rgbx_rgba(data.to_vec(), data.len(), &mut output_buffer);
+    return Ok(PyByteArray::new(py, &output_buffer).into());
 }
 
 #[pyfunction]
 #[pyo3(name = "decode_rre")]
-fn decode_rre_wrapper(py: Python<'_>, input: PyBuffer<u8>, width: u16, height: u16, bypp: u16) -> PyResult<&PyByteArray> {
+fn decode_rre_wrapper(py: Python<'_>, input: &[u8], width: u16, height: u16, bypp: u16) -> PyResult<Py<PyByteArray>> {
+    let data = input;
     let mut output_buffer = vec![0 as u8; width as usize * height as usize * bypp as usize];
-    if decode_rre(input.to_vec(py).unwrap(), input.len_bytes(), &mut output_buffer, bypp, width, height) != 0 {
+    if decode_rre(data.to_vec(), data.len(), &mut output_buffer, bypp, width, height) != 0 {
         return Err(PyTypeError::new_err("Decode failed!"));
     }
-    return Ok(PyByteArray::new(py, &output_buffer));
+    return Ok(PyByteArray::new(py, &output_buffer).into());
 }
 
 #[pymodule]
-fn librlers(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn librlers(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bitmap_decompress_wrapper, m)?)?;
-    m.add_function(wrap_pyfunction!(mask_rgbx_wrapper,         m)?)?;
-    m.add_function(wrap_pyfunction!(decode_rre_wrapper,        m)?)?;
+    m.add_function(wrap_pyfunction!(mask_rgbx_wrapper, m)?)?;
+    m.add_function(wrap_pyfunction!(decode_rre_wrapper, m)?)?;
     Ok(())
 }
 

@@ -211,6 +211,8 @@ class RDPConnection:
 			return None, e
 		finally:
 			self.disconnected_evt.set()
+			if self.__connection is not None:
+				await self.__connection.close()
 	
 	async def __aenter__(self):
 		return self
