@@ -26,7 +26,10 @@ jobs:
           toolchain: stable
           default: true
       
-      
+      - name: Install additional libs on Linux
+        if: runner.os == 'Linux'
+        run: |
+          apt install -y libatomic1
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.17.0
