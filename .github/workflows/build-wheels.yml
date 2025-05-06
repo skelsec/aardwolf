@@ -47,6 +47,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
+          name: wheels-${{ runner.os }}
 
       #- uses: sarisia/actions-status-discord@v1
       #  if: always()
