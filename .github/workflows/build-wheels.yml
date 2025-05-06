@@ -32,7 +32,7 @@ jobs:
           sudo apt install -y libatomic1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.17.0
+        uses: pypa/cibuildwheel@v2.23.3
         env:
           CIBW_BEFORE_ALL_LINUX: "curl --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
           CIBW_ENVIRONMENT: 'PATH="$PATH:$HOME/.cargo/bin"'
@@ -48,23 +48,23 @@ jobs:
         with:
           path: ./wheelhouse/*.whl
 
-      - uses: sarisia/actions-status-discord@v1
-        if: always()
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ job.status }}
-          content: |
-            ${{ github.event_name == 'push' && format('Hey all! A new commit was pushed to {0}!', github.repository) || '' }}
-            ${{ github.event_name == 'pull_request' && format('Hey all! A new pull request has been opened on {0}!', github.repository) || '' }}
-            ${{ github.event_name == 'release' && format('Hey all! A new release was created for project {0}!', github.event.repository.name) || '' }}
-          title: |
-            ${{ github.event_name == 'push' && 'Push Notification' || '' }}
-            ${{ github.event_name == 'pull_request' && 'Pull Request Notification' || '' }}
-            ${{ github.event_name == 'release' && 'Release Notification' || '' }}
-          color: |
-            ${{ github.event_name == 'push' && '0x00ff00' || '' }}
-            ${{ github.event_name == 'pull_request' && '0xff0000' || '' }}
-            ${{ github.event_name == 'release' && '0x0000ff' || '' }}
-          url: "${{ github.server_url }}/${{ github.repository }}"
-          username: GitHub Actions
-          avatar_url: "https://avatars.githubusercontent.com/u/19204702"
+      #- uses: sarisia/actions-status-discord@v1
+      #  if: always()
+      #  with:
+      #    webhook: ${{ secrets.DISCORD_WEBHOOK }}
+      #    status: ${{ job.status }}
+      #    content: |
+      #      ${{ github.event_name == 'push' && format('Hey all! A new commit was pushed to {0}!', github.repository) || '' }}
+      #      ${{ github.event_name == 'pull_request' && format('Hey all! A new pull request has been opened on {0}!', github.repository) || '' }}
+      #      ${{ github.event_name == 'release' && format('Hey all! A new release was created for project {0}!', github.event.repository.name) || '' }}
+      #    title: |
+      #      ${{ github.event_name == 'push' && 'Push Notification' || '' }}
+      #      ${{ github.event_name == 'pull_request' && 'Pull Request Notification' || '' }}
+      #      ${{ github.event_name == 'release' && 'Release Notification' || '' }}
+      #    color: |
+      #      ${{ github.event_name == 'push' && '0x00ff00' || '' }}
+      #      ${{ github.event_name == 'pull_request' && '0xff0000' || '' }}
+      #      ${{ github.event_name == 'release' && '0x0000ff' || '' }}
+      #    url: "${{ github.server_url }}/${{ github.repository }}"
+      #    username: GitHub Actions
+      #    avatar_url: "https://avatars.githubusercontent.com/u/19204702"
