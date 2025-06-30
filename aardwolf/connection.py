@@ -1171,7 +1171,7 @@ class RDPConnection:
 			traceback.print_exc()
 			return None, e
 
-	async def send_mouse(self, button:MOUSEBUTTON, xPos:int, yPos:int, is_pressed:bool):
+	async def send_mouse(self, button:MOUSEBUTTON, xPos:int, yPos:int, is_pressed:bool, steps:int = 0):
 		try:
 			if xPos < 0 or yPos < 0:
 				return True, None
@@ -1194,6 +1194,14 @@ class RDPConnection:
 				# indicates a simple pointer update with no buttons pressed
 				# sending this enables the mouse hover feel on the remote end
 				mouse.pointerFlags |= PTRFLAGS.MOVE
+			if button == MOUSEBUTTON.MOUSEBUTTON_WHEEL_UP:
+				mouse.pointerFlags |= PTRFLAGS.WHEEL
+				mouse.pointerFlags |= (PTRFLAGS.WheelRotationMask & steps)
+
+			if button == MOUSEBUTTON.MOUSEBUTTON_WHEEL_DOWN:
+				mouse.pointerFlags |= PTRFLAGS.WHEEL_NEGATIVE
+				mouse.pointerFlags |= (PTRFLAGS.WheelRotationMask & steps)
+
 			mouse.xPos = xPos
 			mouse.yPos = yPos
 
