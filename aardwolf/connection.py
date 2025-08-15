@@ -207,7 +207,7 @@ class RDPConnection:
 			
 			return True, None
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 		finally:
 			self.disconnected_evt.set()
@@ -609,7 +609,7 @@ class RDPConnection:
 
 			return True, None
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 
 	async def __erect_domain(self):
@@ -748,7 +748,7 @@ class RDPConnection:
 
 			return True, None
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 	
 	async def __handle_mandatory_capability_exchange(self):
@@ -1063,7 +1063,7 @@ class RDPConnection:
 		except asyncio.CancelledError:
 			return None, None
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 		finally:
 			await self.terminate()
@@ -1094,7 +1094,7 @@ class RDPConnection:
 			#	#	print('notbitmap %s' % fpdu.fpOutputUpdates.updateCode.name)
 		except Exception as e:
 			# the decoder is not perfect yet, so it's better to keep this here...
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return
 	
 
@@ -1108,7 +1108,7 @@ class RDPConnection:
 				scancode = scancode_hint
 			return await self.send_key_scancode(scancode, is_pressed, is_extended)
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 	
 	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
@@ -1139,7 +1139,7 @@ class RDPConnection:
 				
 
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 
 	async def send_key_char(self, char, is_pressed):
@@ -1168,7 +1168,7 @@ class RDPConnection:
 			return True, None
 
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 
 	async def send_mouse(self, button:MOUSEBUTTON, xPos:int, yPos:int, is_pressed:bool, steps:int = 0):
@@ -1219,7 +1219,7 @@ class RDPConnection:
 					
 			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 
 	def get_desktop_buffer(self, encoding:VIDEO_FORMAT = VIDEO_FORMAT.PIL):
@@ -1237,7 +1237,7 @@ class RDPConnection:
 			else:
 				raise ValueError('Output format of "%s" is not supported!' % encoding)
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			return None, e
 	
 	async def get_current_clipboard_text(self):
@@ -1303,7 +1303,7 @@ class RDPConnection:
 			return None, None
 
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			await self.terminate()
 			return None, e
 	
@@ -1362,7 +1362,7 @@ class RDPConnection:
 				raise NotImplementedError("Fastpath output is not yet implemented")
 
 		except Exception as e:
-			traceback.print_exc()
+			logger.error(f"Error in __x224_reader: {e}, {traceback.format_exc()}")
 			await self.terminate()
 			return None, e
 		
