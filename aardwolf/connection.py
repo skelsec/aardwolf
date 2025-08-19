@@ -570,7 +570,9 @@ class RDPConnection:
 			conf_create_req = self.__t125_ber_codec.encode('ConnectMCSPDU',('connect-initial', initialconnect))
 			await self._x224net.write(bytes(conf_create_req))
 			
-			response_raw = await self._x224net.read()			
+			response_raw = await self._x224net.read()
+			if response_raw is None:
+				raise Exception('Connection closed!')
 			server_res_raw = response_raw.data
 			server_res_t125 = self.__t125_ber_codec.decode('ConnectMCSPDU', server_res_raw)
 			if server_res_t125[0] != 'connect-response':
@@ -627,6 +629,8 @@ class RDPConnection:
 			request = self._t125_per_codec.encode('DomainMCSPDU', ('attachUserRequest', {}))
 			await self._x224net.write(request)
 			response = await self._x224net.read()
+			if response is None:
+				raise Exception('Connection closed!')
 			response_parsed = self._t125_per_codec.decode('DomainMCSPDU', response.data)
 			if response_parsed[0] != 'attachUserConfirm':
 				raise Exception('Unexpected response! %s' % response_parsed[0])
@@ -644,6 +648,8 @@ class RDPConnection:
 				joindata = self._t125_per_codec.encode('DomainMCSPDU', ('channelJoinRequest', {'initiator': self._initiator, 'channelId': self.__joined_channels[name].channel_id}))
 				await self._x224net.write(bytes(joindata))
 				response = await self._x224net.read()
+				if response is None:
+					raise Exception('Connection closed!')
 				
 				x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
 				if x[0] != 'channelJoinConfirm':

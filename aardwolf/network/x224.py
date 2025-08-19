@@ -46,7 +46,10 @@ class X224Network:
 			return reply, e
 
 	async def read(self):
-		is_fastpath, tpktdata = await self.connection.read_one()
+		res = await self.connection.read_one()
+		if res is None:
+			return None
+		is_fastpath, tpktdata = res
 		if is_fastpath is True:
 			raise Exception('Fastpath packet should never be here!')
 		return X224Packet.from_bytes(tpktdata)

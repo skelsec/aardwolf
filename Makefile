@@ -12,8 +12,8 @@ publish: clean package
 
 package: clean
 	python3 setup.py sdist
-	sudo docker pull quay.io/pypa/manylinux2014_x86_64
-	sudo docker run --rm -v `pwd`:/io quay.io/pypa/manylinux2014_x86_64 /io/builder/manylinux/build.sh
+#	sudo docker pull quay.io/pypa/manylinux2014_x86_64
+#	sudo docker run --rm -v `pwd`:/io quay.io/pypa/manylinux2014_x86_64 /io/builder/manylinux/build.sh
 
 rebuild: clean
 	python3 setup.py install
