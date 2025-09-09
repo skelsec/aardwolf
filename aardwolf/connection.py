@@ -787,6 +787,16 @@ class RDPConnection:
 						error_msg += f'\n  DATAPDU Type2: {shd.pduType2.name} (0x{shd.pduType2.value:02x})'
 						error_msg += f'\n  Share ID: {shd.shareID}'
 						error_msg += f'\n  Stream ID: {shd.streamID}'
+						
+						# If it's a SET_ERROR_INFO_PDU, decode the specific error
+						if shd.pduType2.name == 'SET_ERROR_INFO_PDU':
+							try:
+								from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
+								error_pdu = TS_SET_ERROR_INFO_PDU.from_bytes(data)
+								error_msg += f'\n  RDP Error Code: {error_pdu.errorInfo.name} (0x{error_pdu.errorInfoRaw:08x})'
+								error_msg += f'\n  Error Description: {error_pdu.errorInfo.value}'
+							except Exception as parse_err:
+								error_msg += f'\n  Failed to parse SET_ERROR_INFO_PDU: {parse_err}'
 					except Exception as e:
 						error_msg += f'\n  Failed to parse DATAPDU details: {e}'
 				
