@@ -774,22 +774,24 @@ class RDPConnection:
 			shc = TS_SHARECONTROLHEADER.from_bytes(data)
 			if shc.pduType != PDUTYPE.DEMANDACTIVEPDU:
 				error_msg = f'Unexpected reply! Expected DEMANDACTIVEPDU got "{shc.pduType.name}" instead!'
-				error_msg += f'\n  PDU Type: {shc.pduType} (0x{shc.pduType.value:02x})'
-				error_msg += f'\n  PDU Source: {shc.pduSource}'
-				error_msg += f'\n  Total Length: {shc.totalLength}'
-				error_msg += f'\n  Data Start Offset: {data_start_offset}'
-				error_msg += f'\n  Raw Data Length: {len(data)} bytes'
-				error_msg += f'\n  Raw Data (first 32 bytes): {data[:32].hex()}'
-				
-				if shc.pduType == PDUTYPE.DATAPDU:
-					try:
-						shd = TS_SHAREDATAHEADER.from_bytes(data)
-						error_msg += f'\n  DATAPDU Type2: {shd.pduType2.name} (0x{shd.pduType2.value:02x})'
-						error_msg += f'\n  Share ID: {shd.shareID}'
-						error_msg += f'\n  Stream ID: {shd.streamID}'
-					except Exception as e:
-						error_msg += f'\n  Failed to parse DATAPDU details: {e}'
-				
+				try:
+					error_msg += f'\n  PDU Type: {shc.pduType} (0x{shc.pduType.value:02x})'
+					error_msg += f'\n  PDU Source: {shc.pduSource}'
+					error_msg += f'\n  Total Length: {shc.totalLength}'
+					error_msg += f'\n  Data Start Offset: {data_start_offset}'
+					error_msg += f'\n  Raw Data Length: {len(data)} bytes'
+					error_msg += f'\n  Raw Data (first 32 bytes): {data[:32].hex()}'
+					
+					if shc.pduType == PDUTYPE.DATAPDU:
+						try:
+							shd = TS_SHAREDATAHEADER.from_bytes(data)
+							error_msg += f'\n  DATAPDU Type2: {shd.pduType2.name} (0x{shd.pduType2.value:02x})'
+							error_msg += f'\n  Share ID: {shd.shareID}'
+							error_msg += f'\n  Stream ID: {shd.streamID}'
+						except Exception as e:
+							error_msg += f'\n  Failed to parse DATAPDU details: {e}'
+				except Exception as error:
+					error_msg += f'\n  Failed to parse DATAPDU details: {error}'
 				raise Exception(error_msg)
 			
 			res = TS_DEMAND_ACTIVE_PDU.from_bytes(data)
