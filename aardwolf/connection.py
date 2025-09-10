@@ -774,12 +774,38 @@ class RDPConnection:
 			shc = TS_SHARECONTROLHEADER.from_bytes(data)
 			if shc.pduType != PDUTYPE.DEMANDACTIVEPDU:
 				error_msg = f'Unexpected reply! Expected DEMANDACTIVEPDU got "{shc.pduType.name}" instead!'
+				error_msg += f'\n\n=== CONNECTION STATE DEBUG INFO ==='
+				error_msg += f'\n  Connection Mode: {getattr(self, "mode", "Unknown")}'
+				error_msg += f'\n  Authentication State: {getattr(self, "authentication_state", "Unknown")}'
+				error_msg += f'\n  Security Protocol: {getattr(self.target, "security_protocol", "Unknown")}'
+				error_msg += f'\n  Server OS: {getattr(self.target, "os", "Unknown")}'
+				error_msg += f'\n  RDP Version: {getattr(self.target, "rd_req_protocol", "Unknown")}'
+				error_msg += f'\n  Encryption Level: {getattr(self, "encryption_level", "Unknown")}'
+				error_msg += f'\n  Crypto Layer: {type(self.cryptolayer).__name__ if self.cryptolayer else "None"}'
+				
+				error_msg += f'\n\n=== PACKET ANALYSIS ==='
 				error_msg += f'\n  PDU Type: {shc.pduType} (0x{shc.pduType.value:02x})'
 				error_msg += f'\n  PDU Source: {shc.pduSource}'
 				error_msg += f'\n  Total Length: {shc.totalLength}'
 				error_msg += f'\n  Data Start Offset: {data_start_offset}'
 				error_msg += f'\n  Raw Data Length: {len(data)} bytes'
-				error_msg += f'\n  Raw Data (first 32 bytes): {data[:32].hex()}'
+				
+				# Enhanced hex dump with better formatting
+				error_msg += f'\n\n=== RAW PACKET DATA ==='
+				hex_data = data.hex()
+				for i in range(0, min(len(hex_data), 128), 32):
+					chunk = hex_data[i:i+32]
+					formatted_chunk = ' '.join(chunk[j:j+2] for j in range(0, len(chunk), 2))
+					error_msg += f'\n  {i//2:04x}: {formatted_chunk}'
+				if len(hex_data) > 128:
+					error_msg += f'\n  ... ({len(data)} total bytes)'
+				
+				# Add connection timeline info
+				error_msg += f'\n\n=== CONNECTION TIMELINE ==='
+				error_msg += f'\n  Current Method: __handle_mandatory_capability_exchange'
+				error_msg += f'\n  Expected Next: DEMANDACTIVEPDU processing'
+				error_msg += f'\n  Server Connect PDU Keys: {list(self.__server_connect_pdu.keys()) if hasattr(self, "_RDPConnection__server_connect_pdu") else "Not available"}'
+				error_msg += f'\n  Encryption Level: {self.__server_connect_pdu.get(TS_UD_TYPE.SC_SECURITY, {}).encryptionLevel if hasattr(self, "_RDPConnection__server_connect_pdu") else "Unknown"}'
 				
 				if shc.pduType == PDUTYPE.DATAPDU:
 					try:
@@ -793,12 +819,28 @@ class RDPConnection:
 							try:
 								from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
 								error_pdu = TS_SET_ERROR_INFO_PDU.from_bytes(data)
+								error_msg += f'\n\n=== SET_ERROR_INFO_PDU DETAILS ==='
 								error_msg += f'\n  RDP Error Code: {error_pdu.errorInfo.name} (0x{error_pdu.errorInfoRaw:08x})'
 								error_msg += f'\n  Error Description: {error_pdu.errorInfo.value}'
+								
+								# Special handling for NONE error - this might be RDS specific behavior
+								if error_pdu.errorInfo.name == 'NONE':
+									error_msg += f'\n  *** ANALYSIS: Server sent SET_ERROR_INFO_PDU with NONE error ***'
+									error_msg += f'\n  This may be Microsoft RDS specific behavior'
+									error_msg += f'\n  Server might be signaling state change rather than error'
+									error_msg += f'\n  Consider implementing RDS-specific handling'
 							except Exception as parse_err:
 								error_msg += f'\n  Failed to parse SET_ERROR_INFO_PDU: {parse_err}'
 					except Exception as e:
 						error_msg += f'\n  Failed to parse DATAPDU details: {e}'
+				
+				# Add suggestions for debugging
+				error_msg += f'\n\n=== DEBUGGING SUGGESTIONS ==='
+				error_msg += f'\n  1. Check if server requires specific RDS protocol negotiation'
+				error_msg += f'\n  2. Verify X224 connection request parameters'
+				error_msg += f'\n  3. Consider implementing RDSTLS protocol support'
+				error_msg += f'\n  4. Check server RDP version compatibility'
+				error_msg += f'\n  5. Analyze if SET_ERROR_INFO_PDU with NONE should be handled differently'
 				
 				raise Exception(error_msg)
 			
