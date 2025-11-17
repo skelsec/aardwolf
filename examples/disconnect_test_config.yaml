@@ -1,0 +1,62 @@
+# RDP Disconnect Testing Framework - Example Configuration
+# This configuration demonstrates a comprehensive stage sweep test
+
+# Target RDP server connection URL
+# Format: rdp+ntlm-password://DOMAIN\User:Password@hostname[:port]
+target: "rdp+ntlm-password://TESTDOMAIN\\Administrator:Password123@192.168.1.100"
+
+# Number of iterations to run for each protocol stage
+iterations_per_stage: 10
+
+# Number of stages to test in parallel
+parallel_stages: 5
+
+# Abort mode: "hard" (immediate socket close) or "soft" (graceful disconnect)
+abort_mode: "hard"
+
+# List of protocol stages to test
+# Use all stages or specify a subset for targeted testing
+stages:
+  - after_x224_negotiate
+  - after_establish_channels
+  - after_erect_domain
+  - after_attach_user
+  - after_join_channels
+  - after_security_exchange
+  - after_send_userdata
+  - after_license
+  - after_server_demand_active
+  - after_client_confirm_active
+  - after_server_sync
+  - after_client_sync
+  - after_client_control_cooperate
+  - after_client_control_request
+  - after_client_fontlist
+  - after_capability_exchange
+  - after_start_external_reader
+  - on_first_fastpath_bitmap
+  - on_nth_fastpath_bitmap
+
+# For on_nth_fastpath_bitmap stage: abort after N bitmap updates
+bitmap_abort_threshold: 5
+
+# Connection timeout in seconds
+connection_timeout: 20
+
+# Maximum number of concurrent connections
+max_concurrent_connections: 30
+
+# Hammer mode settings (optional)
+hammer_mode: false
+hammer_strategy: "parallel"  # Options: parallel, focused, burst, random
+burst_size: 20
+burst_delay: 0.1
+burst_repeat: 100
+
+# Logging configuration
+logging:
+  file: "logs/rdp_test_session.log"
+  json: "logs/rdp_test_results.json"
+  csv: "logs/rdp_test_results.csv"
+  per_connection: true
+  verbose: false

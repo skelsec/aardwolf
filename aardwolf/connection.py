@@ -5,12 +5,14 @@ import copy
 import typing
 import asyncio
 import traceback
-from typing import cast
+import inspect
+from typing import cast, Optional, Callable, Literal
 from collections import OrderedDict
 
 import asn1tools
 from PIL import Image
 from aardwolf import logger
+from aardwolf.exceptions import RDPAbortException
 from aardwolf.keyboard import VK_MODIFIERS
 from aardwolf.commons.queuedata.constants import MOUSEBUTTON, VIDEO_FORMAT
 from aardwolf.commons.target import RDPTarget
@@ -128,6 +130,14 @@ class RDPConnection:
 		self.desktop_buffer_has_data = False
 		self.__terminate_called = False
 
+		# Abort testing framework fields
+		self.abort_stage: Optional[str] = None
+		self.abort_callback: Optional[Callable[[str, 'RDPConnection'], bool]] = None
+		self._aborted: bool = False
+		self.fastpath_bitmap_count: int = 0
+		self.abort_n_bitmap: int = 0
+		self.abort_mode: Literal["hard", "soft"] = "hard"
+
 		self.__vk_to_sc = {
 			'VK_BACK'     : 14,
 			'VK_ESCAPE'   : 1,
@@ -177,7 +187,59 @@ class RDPConnection:
 			#'VK_DECIMAL' not found anywhere?
 		}
 
-	
+	async def _hard_abort(self, stage: str):
+		"""Performs a hard abort by immediately closing the connection without cleanup."""
+		self._aborted = True
+		self.disconnected_evt.set()
+		if self.__connection:
+			await self.__connection.close()
+		raise RDPAbortException(stage)
+
+	async def _soft_abort(self, stage: str):
+		"""Performs a soft abort by sending a disconnect PDU before closing."""
+		try:
+			await self.send_disconnect()
+		except:
+			pass
+		await self._hard_abort(stage)
+
+	async def _do_abort(self, stage: str):
+		"""Executes the configured abort mode (hard or soft)."""
+		if self.abort_mode == "soft":
+			await self._soft_abort(stage)
+		else:
+			await self._hard_abort(stage)
+
+	async def _maybe_abort(self, stage: str):
+		"""
+		Checks if an abort should be triggered at the current stage.
+
+		This method is called at various protocol stages during the connection sequence.
+		It checks both the abort_callback (if set) and the abort_stage string match.
+
+		Args:
+			stage: The current protocol stage identifier
+		"""
+		if self._aborted:
+			return
+
+		# Check callback-based abort logic
+		if self.abort_callback:
+			try:
+				res = self.abort_callback(stage, self)
+				if inspect.iscoroutine(res):
+					res = await res
+				if res:
+					await self._do_abort(stage)
+					return
+			except Exception as e:
+				logger.error(f"Error in abort callback: {e}")
+
+		# Check stage-based abort logic
+		if self.abort_stage == stage:
+			await self._do_abort(stage)
+
+
 	async def terminate(self):
 		"""sends a shutdown request to the server and terminates the connection"""
 		try:
@@ -259,7 +321,9 @@ class RDPConnection:
 			connection_accepted_reply, err = await self._x224net.client_negotiate(self.client_x224_flags, self.client_x224_supported_protocols)
 			if err is not None:
 				raise err
-			
+
+			await self._maybe_abort("after_x224_negotiate")
+
 			if connection_accepted_reply.rdpNegData is not None:
 				# newer RDP protocol was selected
 
@@ -309,45 +373,55 @@ class RDPConnection:
 			if err is not None:
 				raise err
 			logger.debug('Establish channels OK')
-			
+			await self._maybe_abort("after_establish_channels")
+
 			_, err = await self.__erect_domain()
 			if err is not None:
 				raise err
 			logger.debug('Erect domain OK')
-			
+			await self._maybe_abort("after_erect_domain")
+
 			_, err = await self.__attach_user()
 			if err is not None:
 				raise err
 			logger.debug('Attach user OK')
-			
+			await self._maybe_abort("after_attach_user")
+
 			_, err = await self.__join_channels()
 			if err is not None:
 				raise err
 			logger.debug('Join channels OK')
-			
+			await self._maybe_abort("after_join_channels")
+
 			if self.x224_protocol == SUPP_PROTOCOLS.RDP:
 				# key exchange here because we use old version of the protocol
 				_, err = await self.__security_exchange()
 				if err is not None:
 					raise err
 				logger.debug('Security exchange OK')
+				await self._maybe_abort("after_security_exchange")
 
 			_, err = await self.__send_userdata()
 			if err is not None:
 				raise err
 			logger.debug('Send userdata OK')
+			await self._maybe_abort("after_send_userdata")
 
 			_, err = await self.__handle_license()
 			if err is not None:
 				raise err
 			logger.debug('handle license OK')
+			await self._maybe_abort("after_license")
 
 			_, err = await self.__handle_mandatory_capability_exchange()
 			if err is not None:
 				raise err
 			logger.debug('mandatory capability exchange OK')
+			await self._maybe_abort("after_capability_exchange")
 
 			self.__external_reader_task = asyncio.create_task(self.__external_reader())
+			await self._maybe_abort("after_start_external_reader")
+
 			logger.debug('RDP connection sequence done')
 			self.__desktop_buffer = Image.new(mode="RGBA", size=(self.iosettings.video_width, self.iosettings.video_height))
 			return True, None
@@ -774,8 +848,9 @@ class RDPConnection:
 			shc = TS_SHARECONTROLHEADER.from_bytes(data)
 			if shc.pduType != PDUTYPE.DEMANDACTIVEPDU:
 				raise Exception('Unexpected reply! Expected DEMANDACTIVEPDU got "%s" instead!' % shc.pduType.name)
-			
+
 			res = TS_DEMAND_ACTIVE_PDU.from_bytes(data)
+			await self._maybe_abort("after_server_demand_active")
 			for cap in res.capabilitySets:
 				if cap.capabilitySetType == CAPSTYPE.GENERAL:
 					cap = typing.cast(TS_GENERAL_CAPABILITYSET, cap.capability)
@@ -854,10 +929,12 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(msg, sec_hdr, None, share_hdr, self.__joined_channels['MCS'].channel_id, False)
+			await self._maybe_abort("after_client_confirm_active")
+
 			data, err = await self.__joined_channels['MCS'].out_queue.get()
 			if err is not None:
 				raise err
-			
+
 			data = data[data_start_offset:]
 			shc = TS_SHARECONTROLHEADER.from_bytes(data)
 			if shc.pduType == PDUTYPE.DATAPDU:
@@ -870,7 +947,8 @@ class RDPConnection:
 				elif shd.pduType2 == PDUTYPE2.SYNCHRONIZE:
 					# this is the expected data here
 					res = TS_SYNCHRONIZE_PDU.from_bytes(data)
-			
+					await self._maybe_abort("after_server_sync")
+
 				else:
 					raise Exception('Unexpected reply! %s' % shd.pduType2.name)
 			else:
@@ -890,6 +968,7 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 			
 			await self.handle_out_data(cli_sync, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			await self._maybe_abort("after_client_sync")
 
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
@@ -908,7 +987,7 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(cli_ctrl, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
-			
+			await self._maybe_abort("after_client_control_cooperate")
 
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
@@ -927,6 +1006,7 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(cli_ctrl, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			await self._maybe_abort("after_client_control_request")
 
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
@@ -942,7 +1022,8 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(cli_font, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
-			
+			await self._maybe_abort("after_client_fontlist")
+
 			return True, None
 		except Exception as e:
 			return None, e
@@ -1092,6 +1173,13 @@ class RDPConnection:
 					res, image = RDP_VIDEO.from_bitmapdata(bitmapdata, self.iosettings.video_out_format)
 					self.__desktop_buffer.paste(image, [res.x, res.y, res.x+res.width, res.y+res.height])
 					await self.ext_out_queue.put(res)
+
+					# Abort points for bitmap updates
+					self.fastpath_bitmap_count += 1
+					if self.fastpath_bitmap_count == 1:
+						await self._maybe_abort("on_first_fastpath_bitmap")
+					if self.abort_n_bitmap > 0 and self.fastpath_bitmap_count == self.abort_n_bitmap:
+						await self._maybe_abort("on_nth_fastpath_bitmap")
 			#else:
 			#	#print(fpdu.fpOutputUpdates.updateCode)
 			#	#if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.CACHED:

@@ -1,0 +1,15 @@
+# RDP Disconnect Testing Framework - Requirements
+
+# Core dependencies (from main Aardwolf)
+asn1tools>=0.146.0
+Pillow>=8.0.0
+asyauth>=0.0.1
+asysocks>=0.0.1
+unicrypto>=0.0.1
+
+# Testing framework specific
+pyyaml>=5.4.0
+
+# Optional for enhanced features
+# colorama>=0.4.4  # For colored console output
+# tabulate>=0.8.9  # For pretty table formatting

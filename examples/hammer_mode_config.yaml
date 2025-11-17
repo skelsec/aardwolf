@@ -1,0 +1,49 @@
+# RDP Disconnect Testing Framework - Hammer Mode Configuration
+# This configuration demonstrates aggressive stress testing
+
+target: "rdp+ntlm-password://TESTDOMAIN\\Administrator:Password123@192.168.1.100"
+
+# Aggressive iteration count for stress testing
+iterations_per_stage: 100
+
+# High parallelism for maximum stress
+parallel_stages: 20
+
+abort_mode: "hard"
+
+# Focus on high-risk stages that are most likely to trigger crashes
+stages:
+  - after_capability_exchange
+  - after_client_confirm_active
+  - on_first_fastpath_bitmap
+  - on_nth_fastpath_bitmap
+
+bitmap_abort_threshold: 3
+
+# Shorter timeout for faster iteration
+connection_timeout: 15
+
+# Maximum concurrent connections for aggressive testing
+max_concurrent_connections: 50
+
+# Enable hammer mode
+hammer_mode: true
+
+# Hammer strategy options:
+# - "parallel": Hit all stages simultaneously
+# - "focused": Hammer a single stage repeatedly
+# - "burst": Short bursts of rapid connections
+# - "random": Random stage selection for fuzzing
+hammer_strategy: "burst"
+
+# Burst mode settings
+burst_size: 30
+burst_delay: 0.05
+burst_repeat: 200
+
+logging:
+  file: "logs/hammer_session.log"
+  json: "logs/hammer_results.json"
+  csv: "logs/hammer_results.csv"
+  per_connection: false  # Disable per-connection logging for performance
+  verbose: false
