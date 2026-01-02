@@ -17,5 +17,5 @@ crate-type = ["cdylib"]
 path = "src/rle.rs"
 
 [dependencies]
-pyo3 = { version = "0.23.5", features = ["abi3"] }
+pyo3 = { version = "0.27.2", features = ["abi3"] }
 byteorder = "1.4.3"
