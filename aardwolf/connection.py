@@ -759,20 +759,41 @@ class RDPConnection:
 	
 	async def __handle_mandatory_capability_exchange(self):
 		try:
-			# waiting for server to demand active pdu and inside send its capabilities
-			data, err = await self.__joined_channels['MCS'].out_queue.get()
+			# Waiting for server to send DEMANDACTIVEPDU containing its capabilities.
+			# Some misconfigured servers (e.g. Server 2019 with expired RDS licensing
+			# grace period or a rejecting Connection Broker) never send the expected
+			# PDU and instead send SET_ERROR_INFO_PDU after a long delay (30-60s),
+			# or send nothing at all. Without a sub-timeout here the outer
+			# asyncio.wait_for on connect() fires first with a generic TimeoutError,
+			# masking the real server behaviour. Use half the target timeout so we
+			# still surface a useful error before the outer wait_for kicks in.
+			try:
+				cap_timeout = max(1, (self.target.timeout if self.target.timeout else 10) // 2)
+				data, err = await asyncio.wait_for(self.__joined_channels['MCS'].out_queue.get(), timeout=cap_timeout)
+			except asyncio.TimeoutError:
+				raise Exception('Server did not send DEMANDACTIVEPDU within timeout. The server may have RDS licensing or Connection Broker issues.')
 			if err is not None:
 				raise err
 
 			data_start_offset = 0
 			if self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].encryptionLevel == 1:
-				# encryptionLevel == 1 means that server data is not encrypted. This results in this part of the negotiation 
+				# encryptionLevel == 1 means that server data is not encrypted. This results in this part of the negotiation
 				# that the server sends data to the client with an empty security header (which is not documented....)
 				data_start_offset = 4
 
 			data = data[data_start_offset:]
 			shc = TS_SHARECONTROLHEADER.from_bytes(data)
 			if shc.pduType != PDUTYPE.DEMANDACTIVEPDU:
+				# The server may send a DATAPDU with SET_ERROR_INFO_PDU instead of a
+				# DEMANDACTIVEPDU when it decides to reject the session (e.g. RDS
+				# Connection Broker cancellation, ERRINFO_CB_CONNECTION_CANCELLED).
+				# Surface the server's error code rather than a generic "unexpected
+				# reply" message so the caller knows what actually went wrong.
+				if shc.pduType == PDUTYPE.DATAPDU:
+					shd = TS_SHAREDATAHEADER.from_bytes(data)
+					if shd.pduType2 == PDUTYPE2.SET_ERROR_INFO_PDU:
+						res = TS_SET_ERROR_INFO_PDU.from_bytes(data)
+						raise Exception('Server replied with error during capability exchange! Code: %s ErrName: %s' % (hex(res.errorInfoRaw), res.errorInfo.name))
 				raise Exception('Unexpected reply! Expected DEMANDACTIVEPDU got "%s" instead!' % shc.pduType.name)
 			
 			res = TS_DEMAND_ACTIVE_PDU.from_bytes(data)
