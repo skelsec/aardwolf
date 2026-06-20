@@ -32,12 +32,14 @@ jobs:
           sudo apt install -y libatomic1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.23.3
+        uses: pypa/cibuildwheel@v3.2.0
         env:
           CIBW_BEFORE_ALL_LINUX: "curl --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
           CIBW_ENVIRONMENT: 'PATH="$PATH:$HOME/.cargo/bin"'
-          CIBW_PRERELEASE_PYTHONS: False
-          CIBW_SKIP: "*-win32 *-musllinux_*"
+          # Build only for the interpreters the Rust extension supports (>=3.11),
+          # which cibuildwheel infers from python_requires in setup.py.
+          # Skip 32-bit Windows, musllinux, and free-threaded (cp3??t) builds.
+          CIBW_SKIP: "*-win32 *-musllinux_* cp3??t-*"
         #    ...
         with:
           package-dir: .

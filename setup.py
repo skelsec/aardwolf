@@ -38,7 +38,7 @@ setup(
 	description="Asynchronous RDP protocol implementation",
 
 	# long_description=open("README.txt").read(),
-	python_requires='>=3.9',
+	python_requires='>=3.11',
 	
 	rust_extensions=[RustExtension("librlers", path= "aardwolf/utils/rlers/Cargo.toml", binding=Binding.PyO3)],
 
@@ -57,7 +57,10 @@ setup(
 	],
 	
 	classifiers=[
-		"Programming Language :: Python :: 3.8",
+		"Programming Language :: Python :: 3.11",
+		"Programming Language :: Python :: 3.12",
+		"Programming Language :: Python :: 3.13",
+		"Programming Language :: Python :: 3.14",
 		"Operating System :: OS Independent",
 	],
 	entry_points={
