@@ -36,6 +36,7 @@ class RDP_CLIPBOARD_DATA(Protocol):
 
 class RDP_CLIPBOARD_DATA_FILELIST(RDP_CLIPBOARD_DATA):
 	def __init__(self, data:CLIPRDR_FILELIST, datatype:CLIPBRD_FORMAT):
+		self.type = RDPDATATYPE.CLIPBOARD_DATA_FILELIST
 		self.data = data
 		self.datatype = datatype
 

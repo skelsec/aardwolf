@@ -18,7 +18,7 @@ class CLIPRDR_FILECONTENTS_RESPONSE:
 
 	@staticmethod
 	def from_bytes(bbuff: bytes, is_size):
-		return CLIPRDR_FILECONTENTS_RESPONSE.from_buffer(io.BytesIO(bbuff))
+		return CLIPRDR_FILECONTENTS_RESPONSE.from_buffer(io.BytesIO(bbuff), is_size)
 
 	@staticmethod
 	def from_buffer(buff: io.BytesIO, is_size):

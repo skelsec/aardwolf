@@ -182,9 +182,9 @@ class CLIPRDR_FILEDESCRIPTOR:
 		msg.reserved1 = buff.read(32)
 		msg.fileAttributes = FILE_ATTRIBUTE(int.from_bytes(buff.read(4), byteorder='little', signed=False))
 		msg.reserved2 = buff.read(16)
-		msg.lastWriteTime = FILE_ATTRIBUTE(int.from_bytes(buff.read(8), byteorder='little', signed=False))
-		msg.fileSizeHigh = FILE_ATTRIBUTE(int.from_bytes(buff.read(4), byteorder='little', signed=False))
-		msg.fileSizeLow = FILE_ATTRIBUTE(int.from_bytes(buff.read(4), byteorder='little', signed=False))
+		msg.lastWriteTime = int.from_bytes(buff.read(8), byteorder='little', signed=False)
+		msg.fileSizeHigh = int.from_bytes(buff.read(4), byteorder='little', signed=False)
+		msg.fileSizeLow = int.from_bytes(buff.read(4), byteorder='little', signed=False)
 		msg.fileName = buff.read(520).decode('utf-16-le').replace('\x00','')
 		msg.fileSize = msg.fileSizeHigh << 32 | msg.fileSizeLow
 		return msg

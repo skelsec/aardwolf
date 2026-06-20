@@ -1280,6 +1280,23 @@ class RDPConnection:
 		if self.iosettings.clipboard is not None:
 			await self.iosettings.clipboard.set_current_clipboard_files(filepaths)
 
+	def get_remote_file_list(self):
+		if self.iosettings.clipboard is not None:
+			return self.iosettings.clipboard.get_remote_file_list()
+		return None
+
+	def set_file_sink(self, file_sink):
+		if self.iosettings.clipboard is not None:
+			self.iosettings.clipboard.set_file_sink(file_sink)
+
+	def set_download_directory(self, path):
+		if self.iosettings.clipboard is not None:
+			self.iosettings.clipboard.set_download_directory(path)
+
+	async def download_file(self, index:int, dest:str = None, progress_callback = None, cancel_event = None, max_size:int = None):
+		if self.iosettings.clipboard is not None:
+			return await self.iosettings.clipboard.download_file(index, dest, progress_callback=progress_callback, cancel_event=cancel_event, max_size=max_size)
+
 	async def add_vchannel(self, channelname, handler):
 		if 'drdynvc' not in self.__joined_channels:
 			raise Exception('Dynamic Virtual Channels are not enabled on this connection!')

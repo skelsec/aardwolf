@@ -12,7 +12,8 @@ from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_
 from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
 from aardwolf.commons.queuedata import RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
-from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA, RDP_CLIPBOARD_DATA_TXT
+from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA, RDP_CLIPBOARD_DATA_TXT, RDP_CLIPBOARD_DATA_FILELIST
+from aardwolf.extensions.RDPECLIP.protocol.formatdataresponse import CLIPRDR_FILELIST
 from aardwolf.extensions.RDPECLIP.protocol.filecontentsresponse import CLIPRDR_FILECONTENTS_RESPONSE
 from aardwolf.extensions.RDPECLIP.protocol.filecontentsrequest import CLIPRDR_FILECONTENTS_REQUEST, FILECONTENTS_FLAG
 from aardwolf.protocol.T128.security import TS_SECURITY_HEADER,SEC_HDR_FLAG
@@ -39,6 +40,14 @@ class RDPECLIPChannel(Channel):
 		self.__requested_format = None
 		self.__channel_fragment_buffer = b''
 		self.__channel_writer_lock = asyncio.Lock()
+
+		# inbound file download (server -> client) state
+		self.__server_file_format_id = None
+		self.__requesting_file_list = False
+		self.__next_stream_id = 0
+		self.__filecontents_futures = {}  # streamId -> asyncio.Future
+		self.__filecontents_is_size = {}  # streamId -> bool
+		self.__filecontents_timeout = 30
 
 		self.clipboard.register_handler(self)
 
@@ -113,9 +122,20 @@ class RDPECLIPChannel(Channel):
 				elif hdr.msgType == CB_TYPE.CB_FILECONTENTS_REQUEST:
 					fileContentsRequest = CLIPRDR_FILECONTENTS_REQUEST.from_bytes(payload[:hdr.dataLen])
 					await self._handle_filecontents_request(fileContentsRequest)
+				elif hdr.msgType == CB_TYPE.CB_FILECONTENTS_RESPONSE:
+					await self._handle_filecontents_response(hdr, payload[:hdr.dataLen])
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_DATA_RESPONSE:
 					if hdr.msgFlags != hdr.msgFlags.CB_RESPONSE_OK:
 						logger.debug('Server rejected our copy request!')
+						self.__requesting_file_list = False
+						self.__requested_format = None
+					elif self.__requesting_file_list is True:
+						try:
+							filelist = CLIPRDR_FILELIST.from_bytes(payload[:hdr.dataLen])
+							await self._handle_remote_file_list(filelist)
+						finally:
+							self.__requesting_file_list = False
+							self.__requested_format = None
 					else:
 						try:
 							fmtdata = CLIPRDR_FORMAT_DATA_RESPONSE.from_bytes(payload[:hdr.dataLen],otype=self.__requested_format)
@@ -198,10 +218,13 @@ class RDPECLIPChannel(Channel):
 	async def _handle_format_list(self, fmtl:CLIPRDR_FORMAT_LIST):
 		self.current_server_formats = {}
 		for fmte in fmtl.templist:
-			self.current_server_formats[fmte.formatId] = fmte
+			# key by the real numeric id (clpfmt); the parsed formatId collapses
+			# to CLIPBRD_FORMAT.UNKNOWN for any dynamically registered format
+			# (e.g. FileGroupDescriptorW), which would otherwise collide
+			self.current_server_formats[fmte.clpfmt] = fmte
 
 			# Lookup format name in clipboard formats?
-			if fmte.formatId not in self.clipboard.formats:
+			if fmte.clpfmt not in self.clipboard.formats:
 				format_name = self._get_format_name(fmte)
 				logger.debug(f'Received unknown format: {format_name} with id {fmte.formatId} -> {fmte.clpfmt}')
 		
@@ -221,6 +244,18 @@ class RDPECLIPChannel(Channel):
 			# notifying client that new data is available
 			msg = RDP_CLIPBOARD_NEW_DATA_AVAILABLE()
 			await self.send_user_data(msg)
+			return
+
+		# detect the server advertising files via the FileGroupDescriptorW format
+		self.__server_file_format_id = self._find_server_format_id('FileGroupDescriptorW')
+		if self.__server_file_format_id is not None:
+			# request the file descriptor list so the caller can choose what to download
+			self.__requested_format = self.__server_file_format_id
+			self.__requesting_file_list = True
+			dreq = CLIPRDR_FORMAT_DATA_REQUEST()
+			dreq.requestedFormatId = self.__server_file_format_id
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_REQUEST, 0, dreq)
+			await self.fragment_and_send(msg)
 
 	async def _handle_filecontents_request(self, fileContentsRequest:CLIPRDR_FILECONTENTS_REQUEST):
 		# Paste: The remote machine is requesting the contents of a file
@@ -246,6 +281,65 @@ class RDPECLIPChannel(Channel):
 			resp.requestedFileContentsData = b''
 			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FILECONTENTS_RESPONSE, CB_FLAG.CB_RESPONSE_FAIL, resp)
 			await self.fragment_and_send(msg)
+
+	def _find_server_format_id(self, format_name:str):
+		# returns the real numeric format id (clpfmt) the server advertised for
+		# the given name, or None. We must use clpfmt (not the parsed formatId,
+		# which is UNKNOWN for dynamically registered formats) since this id is
+		# echoed back in the CB_FORMAT_DATA_REQUEST.
+		for fmte in self.current_server_formats.values():
+			if self._get_format_name(fmte) == format_name:
+				return fmte.clpfmt
+		return None
+
+	async def _handle_remote_file_list(self, filelist:CLIPRDR_FILELIST):
+		# Download: the server advertised a list of files, store it and notify the client
+		logger.debug(f'Received remote file list with {len(filelist.fileDescriptorArray)} entries')
+		self.clipboard.set_remote_file_list(filelist)
+		msg = RDP_CLIPBOARD_DATA_FILELIST(data=filelist, datatype=self.__server_file_format_id)
+		await self.send_user_data(msg)
+		# also notify via the generic "new data available" event
+		await self.send_user_data(RDP_CLIPBOARD_NEW_DATA_AVAILABLE())
+
+	async def _handle_filecontents_response(self, hdr:CLIPRDR_HEADER, payload:bytes):
+		# Download: the server responded to one of our CB_FILECONTENTS_REQUESTs
+		streamId = int.from_bytes(payload[:4], byteorder='little', signed=False)
+		future = self.__filecontents_futures.get(streamId)
+		if future is None:
+			logger.debug('Received CB_FILECONTENTS_RESPONSE for unknown streamId %s' % streamId)
+			return
+		if future.done():
+			return
+		if CB_FLAG.CB_RESPONSE_OK not in hdr.msgFlags:
+			future.set_exception(Exception('Server rejected file contents request (streamId %s)' % streamId))
+			return
+		is_size = self.__filecontents_is_size.get(streamId, False)
+		resp = CLIPRDR_FILECONTENTS_RESPONSE.from_bytes(payload, is_size)
+		future.set_result(resp.requestedFileContentsData)
+
+	async def request_file_contents(self, lindex:int, dwFlags:FILECONTENTS_FLAG, nPosition:int = 0, cbRequested:int = 0):
+		# Download: ask the server for either the size or a byte range of a remote file.
+		# Returns an int (size) when dwFlags is FILECONTENTS_SIZE, otherwise the raw bytes.
+		streamId = self.__next_stream_id
+		self.__next_stream_id += 1
+
+		req = CLIPRDR_FILECONTENTS_REQUEST()
+		req.streamId = streamId
+		req.lindex = lindex
+		req.dwFlags = dwFlags
+		req.nPosition = nPosition
+		req.cbRequested = cbRequested if dwFlags == FILECONTENTS_FLAG.FILECONTENTS_RANGE else 8
+
+		future = asyncio.get_event_loop().create_future()
+		self.__filecontents_futures[streamId] = future
+		self.__filecontents_is_size[streamId] = (dwFlags == FILECONTENTS_FLAG.FILECONTENTS_SIZE)
+		try:
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FILECONTENTS_REQUEST, 0, req)
+			await self.fragment_and_send(msg)
+			return await asyncio.wait_for(future, timeout=self.__filecontents_timeout)
+		finally:
+			self.__filecontents_futures.pop(streamId, None)
+			self.__filecontents_is_size.pop(streamId, None)
 
 	async def _handle_format_data_request(self, fmtr:CLIPRDR_FORMAT_DATA_REQUEST):
 		# Paste: The remote machine is requesting clipboard data
