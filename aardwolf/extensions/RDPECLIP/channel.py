@@ -344,7 +344,7 @@ class RDPECLIPChannel(Channel):
 	async def _handle_format_data_request(self, fmtr:CLIPRDR_FORMAT_DATA_REQUEST):
 		# Paste: The remote machine is requesting clipboard data
 		logger.debug(f'Got a CB_FORMAT_DATA_REQUEST for formatid {fmtr.requestedFormatId}')
-		if fmtr.requestedFormatId == self.clipboard.data.datatype:
+		if self.clipboard.data is not None and fmtr.requestedFormatId == self.clipboard.data.datatype:
 			resp = CLIPRDR_FORMAT_DATA_RESPONSE()
 			resp.dataobj = self.clipboard.data.data
 			resp = resp.to_bytes(self.clipboard.data.datatype)
@@ -352,7 +352,14 @@ class RDPECLIPChannel(Channel):
 			await self.fragment_and_send(msg)
 		
 		else:
+			# We either have no clipboard data yet, or we don't hold the format
+			# the server asked for (we advertise all formats in our capabilities,
+			# and remote-side clipboard activity can race our local data). Reply
+			# with a FAIL response so the server stops waiting instead of letting
+			# the unhandled request tear down the whole RDP connection.
 			logger.debug('Server requested a formatid which we dont have. %s' % fmtr.requestedFormatId)
+			msg = CLIPRDR_HEADER.serialize_packet(CB_TYPE.CB_FORMAT_DATA_RESPONSE, CB_FLAG.CB_RESPONSE_FAIL, None)
+			await self.fragment_and_send(msg)
 
 	async def _handle_format_data_response(self, fmtdata:CLIPRDR_FORMAT_DATA_RESPONSE):
 		# Paste: The remote machine has responded to our request for clipboard data
