@@ -36,6 +36,17 @@ class ReliabilityFixTests(unittest.TestCase):
 		asyncio.run(channel.stop())
 		self.assertNotIn(channel, iosettings.clipboard._handlers)
 
+	def test_io_settings_clone_uses_fresh_connection_state(self):
+		iosettings = RDPIOSettings()
+		iosettings.video_width = 1600
+
+		first = iosettings.clone_for_connection()
+		second = iosettings.clone_for_connection()
+
+		self.assertEqual(first.video_width, 1600)
+		self.assertIsNot(first.clipboard, second.clipboard)
+		self.assertIsNot(first.vchannels['ECHO'], second.vchannels['ECHO'])
+
 
 if __name__ == '__main__':
 	unittest.main()
