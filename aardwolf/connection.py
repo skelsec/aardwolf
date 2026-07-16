@@ -1140,6 +1140,10 @@ class RDPConnection:
 	
 	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
 		try:
+			if scancode > 0xFF:
+				scancode &= 0xFF
+				is_extended = True
+
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
 			data_hdr.streamID = STREAM_TYPE.MED
@@ -1150,7 +1154,7 @@ class RDPConnection:
 			kbi.keyboardFlags = 0
 			if is_pressed is False:
 				kbi.keyboardFlags |= KBDFLAGS.RELEASE
-			if is_extended is True or kbi.keyCode > 57000:
+			if is_extended is True:
 				kbi.keyboardFlags |= KBDFLAGS.EXTENDED
 			clii_kb = TS_INPUT_EVENT.from_input(kbi)
 			cli_input = TS_INPUT_PDU_DATA()

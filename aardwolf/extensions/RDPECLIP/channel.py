@@ -68,7 +68,8 @@ class RDPECLIPChannel(Channel):
 			return None, e
 
 	async def stop(self):
-		try:				
+		try:
+			self.clipboard.unregister_handler(self)
 			return True, None
 		except Exception as e:
 			return None, e

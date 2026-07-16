@@ -52,6 +52,10 @@ class Clipboard:
 	def register_handler(self, handler:ClipboardHandler):
 		self._handlers.append(handler)
 
+	def unregister_handler(self, handler:ClipboardHandler):
+		if handler in self._handlers:
+			self._handlers.remove(handler)
+
 	def get_file_size(self, index:int) -> int:
 		file_path = self._get_file_at_index(index)
 		if file_path is None:
