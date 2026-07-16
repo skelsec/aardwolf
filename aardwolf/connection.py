@@ -59,6 +59,7 @@ from aardwolf.protocol.T128.fontlistpdu import TS_FONT_LIST_PDU
 from aardwolf.protocol.T128.inputeventpdu import TS_SHAREDATAHEADER, TS_INPUT_EVENT, TS_INPUT_PDU_DATA
 from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
 from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
+from aardwolf.protocol.T128.savesessioninfopdu import TS_SAVE_SESSION_INFO_PDU
 from aardwolf.protocol.T128.shutdownreqpdu import TS_SHUTDOWN_REQ_PDU
 from aardwolf.protocol.T128.share import PDUTYPE, STREAM_TYPE, PDUTYPE2
 
@@ -97,6 +98,7 @@ class RDPConnection:
 		# ext_in_queue: expects keyboard/mouse/clipboard data
 		self.ext_out_queue = asyncio.Queue()
 		self.ext_in_queue = asyncio.Queue()
+		self.logon_info_queue = asyncio.Queue()
 
 		self.__connection:UniConnection = None
 		self._x224net = None
@@ -198,6 +200,9 @@ class RDPConnection:
 			if self.ext_out_queue is not None:
 				# signaling termination via ext_out_queue
 				await self.ext_out_queue.put(None)			
+
+			if self.logon_info_queue is not None:
+				await self.logon_info_queue.put(None)
 			
 			if self.__external_reader_task is not None:
 				self.__external_reader_task.cancel()
@@ -711,7 +716,7 @@ class RDPConnection:
 
 			info = TS_INFO_PACKET()
 			info.CodePage = 0
-			info.flags = INFO_FLAG.ENABLEWINDOWSKEY|INFO_FLAG.MAXIMIZESHELL|INFO_FLAG.UNICODE|INFO_FLAG.DISABLECTRLALTDEL|INFO_FLAG.MOUSE
+			info.flags = INFO_FLAG.ENABLEWINDOWSKEY|INFO_FLAG.MAXIMIZESHELL|INFO_FLAG.UNICODE|INFO_FLAG.DISABLECTRLALTDEL|INFO_FLAG.MOUSE|INFO_FLAG.LOGONNOTIFY|INFO_FLAG.LOGONERRORS
 			info.Domain = ''
 			info.UserName = ''
 			info.Password = ''
@@ -1066,7 +1071,8 @@ class RDPConnection:
 									print('Decrypted data: %s' % data)
 									print('Original MAC  : %s' % sec_hdr.dataSignature)
 									print('Calculated MAC: %s' % mac)
-					await self.__channel_id_lookup[x[1]['channelId']].process_channel_data(data)
+					if await self.__process_save_session_info(x[1]['channelId'], data) is False:
+						await self.__channel_id_lookup[x[1]['channelId']].process_channel_data(data)
 				else:
 					#print('fastpath data in -> %s' % len(response))
 					fpdu = TS_FP_UPDATE_PDU.from_bytes(response)
@@ -1094,6 +1100,20 @@ class RDPConnection:
 			return None, e
 		finally:
 			await self.terminate()
+
+	async def __process_save_session_info(self, channel_id, data):
+		if channel_id != self.__joined_channels['MCS'].channel_id:
+			return False
+
+		for offset in (0, 4):
+			try:
+				pdu = TS_SAVE_SESSION_INFO_PDU.from_bytes(data[offset:])
+			except (ValueError, KeyError):
+				continue
+
+			await self.logon_info_queue.put(pdu)
+			return True
+		return False
 
 	async def __process_fastpath(self, fpdu):
 		# Fastpath was introduced to the RDP specs to speed up data transmission
