@@ -26,6 +26,7 @@ from aardwolf.protocol.x224.server.connectionconfirm import RDP_NEG_RSP
 from aardwolf.protocol.pdu.input.keyboard import TS_KEYBOARD_EVENT, KBDFLAGS
 from aardwolf.protocol.pdu.input.unicode import TS_UNICODE_KEYBOARD_EVENT
 from aardwolf.protocol.pdu.input.mouse import PTRFLAGS, TS_POINTER_EVENT
+from aardwolf.protocol.pdu.input.sync import TS_SYNC, TS_SYNC_EVENT
 from aardwolf.protocol.pdu.capabilities import CAPSTYPE
 from aardwolf.protocol.pdu.capabilities.general import TS_GENERAL_CAPABILITYSET, OSMAJORTYPE, OSMINORTYPE, EXTRAFLAG
 from aardwolf.protocol.pdu.capabilities.bitmap import TS_BITMAP_CAPABILITYSET
@@ -1137,6 +1138,38 @@ class RDPConnection:
 		except Exception as e:
 			logger.error(f"Error: {e}, {traceback.format_exc()}")
 			return None, e
+
+	async def send_focus_in(self, toggle_flags=TS_SYNC(0)):
+		_, err = await self.send_key_scancode(0x0F, False, False)
+		if err is not None:
+			return None, err
+
+		data_hdr = TS_SHAREDATAHEADER()
+		data_hdr.shareID = 0x103EA
+		data_hdr.streamID = STREAM_TYPE.MED
+		data_hdr.pduType2 = PDUTYPE2.INPUT
+
+		sync = TS_SYNC_EVENT()
+		sync.pad2Octets = b'\x00\x00'
+		sync.toggleFlags = toggle_flags
+		cli_input = TS_INPUT_PDU_DATA()
+		cli_input.slowPathInputEvents.append(TS_INPUT_EVENT.from_input(sync))
+
+		sec_hdr = None
+		if self.cryptolayer is not None:
+			sec_hdr = TS_SECURITY_HEADER()
+			sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+			sec_hdr.flagsHi = 0
+
+		await self.handle_out_data(
+			cli_input,
+			sec_hdr,
+			data_hdr,
+			None,
+			self.__joined_channels['MCS'].channel_id,
+			False,
+		)
+		return await self.send_key_scancode(0x0F, False, False)
 	
 	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
 		try:
@@ -1167,6 +1200,7 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			return True, None
 				
 
 		except Exception as e:

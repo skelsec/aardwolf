@@ -47,6 +47,35 @@ class ReliabilityFixTests(unittest.TestCase):
 		self.assertIsNot(first.clipboard, second.clipboard)
 		self.assertIsNot(first.vchannels['ECHO'], second.vchannels['ECHO'])
 
+	def test_focus_in_sends_tab_release_sync_tab_release(self):
+		connection = RDPConnection(
+			target=None, credentials=None, iosettings=RDPIOSettings()
+		)
+		connection._RDPConnection__joined_channels['MCS'] = SimpleNamespace(
+			channel_id=1001
+		)
+		events = []
+
+		async def send_key_scancode(scancode, is_pressed, is_extended):
+			events.append(('key', scancode, is_pressed, is_extended))
+			return True, None
+
+		async def handle_out_data(dataobj, *_args):
+			events.append(('sync', dataobj.slowPathInputEvents[0].input.toggleFlags))
+
+		connection.send_key_scancode = send_key_scancode
+		connection.handle_out_data = handle_out_data
+		asyncio.run(connection.send_focus_in())
+
+		self.assertEqual(
+			events,
+			[
+				('key', 0x0F, False, False),
+				('sync', 0),
+				('key', 0x0F, False, False),
+			],
+		)
+
 
 if __name__ == '__main__':
 	unittest.main()
