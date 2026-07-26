@@ -1194,7 +1194,7 @@ class RDPConnection:
 			sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
 			sec_hdr.flagsHi = 0
 
-		await self.handle_out_data(
+		_, err = await self.handle_out_data(
 			cli_input,
 			sec_hdr,
 			data_hdr,
@@ -1202,6 +1202,8 @@ class RDPConnection:
 			self.__joined_channels['MCS'].channel_id,
 			False,
 		)
+		if err is not None:
+			return None, err
 		return await self.send_key_scancode(0x0F, False, False)
 	
 	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
@@ -1232,7 +1234,9 @@ class RDPConnection:
 				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
 				sec_hdr.flagsHi = 0
 
-			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			_, err = await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			if err is not None:
+				return None, err
 			return True, None
 				
 
@@ -1262,7 +1266,9 @@ class RDPConnection:
 				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
 				sec_hdr.flagsHi = 0
 
-			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			_, err = await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			if err is not None:
+				return None, err
 			return True, None
 
 		except Exception as e:
@@ -1315,7 +1321,9 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 					
-			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			_, err = await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			if err is not None:
+				return None, err
 			return True, None
 		except Exception as e:
 			logger.error(f"Error: {e}, {traceback.format_exc()}")
@@ -1476,6 +1484,7 @@ class RDPConnection:
 				
 			else:
 				raise NotImplementedError("Fastpath output is not yet implemented")
+			return True, None
 
 		except Exception as e:
 			logger.error(f"Error: {e}, {traceback.format_exc()}")
