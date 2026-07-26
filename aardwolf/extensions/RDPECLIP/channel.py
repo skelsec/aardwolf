@@ -11,7 +11,7 @@ from aardwolf.extensions.RDPECLIP.protocol import *
 from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_GENERAL_CAPABILITY, CB_GENERAL_FLAGS
 from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
-from aardwolf.commons.queuedata import RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
+from aardwolf.commons.queuedata import RDP_CLIPBOARD_FORMAT_LIST_RESPONSE, RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
 from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA, RDP_CLIPBOARD_DATA_TXT, RDP_CLIPBOARD_DATA_FILELIST
 from aardwolf.extensions.RDPECLIP.protocol.formatdataresponse import CLIPRDR_FILELIST
 from aardwolf.extensions.RDPECLIP.protocol.filecontentsresponse import CLIPRDR_FILECONTENTS_RESPONSE
@@ -68,7 +68,8 @@ class RDPECLIPChannel(Channel):
 			return None, e
 
 	async def stop(self):
-		try:				
+		try:
+			self.clipboard.unregister_handler(self)
 			return True, None
 		except Exception as e:
 			return None, e
@@ -152,8 +153,10 @@ class RDPECLIPChannel(Channel):
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_LIST_RESPONSE:
 					if CB_FLAG.CB_RESPONSE_OK in hdr.msgFlags:
 						logger.debug('Server accepted our copy request!')
+						await self.send_user_data(RDP_CLIPBOARD_FORMAT_LIST_RESPONSE(True))
 					else:
 						logger.debug('Server rejected our copy request!')
+						await self.send_user_data(RDP_CLIPBOARD_FORMAT_LIST_RESPONSE(False))
 			
 			elif self.status == CLIPBRDSTATUS.WAITING_SERVER_INIT:
 				# we expect either CLIPRDR_CAPS or CLIPRDR_MONITOR_READY
