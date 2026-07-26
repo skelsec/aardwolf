@@ -1173,6 +1173,7 @@ class RDPConnection:
 			return None, e
 
 	async def send_focus_in(self, toggle_flags=TS_SYNC(0)):
+		"""Tab release, Synchronize toggle keys, Tab release. Matches mstsc/FreeRDP focus-in behavior."""
 		_, err = await self.send_key_scancode(0x0F, False, False)
 		if err is not None:
 			return None, err
@@ -1208,6 +1209,7 @@ class RDPConnection:
 	
 	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
 		try:
+			# Extended scancodes (e.g. 0xE05B for Win) encode the flag in the high byte
 			if scancode > 0xFF:
 				scancode &= 0xFF
 				is_extended = True
