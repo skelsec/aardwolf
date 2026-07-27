@@ -1153,7 +1153,7 @@ class RDPConnection:
 			await self.terminate()
 
 	async def __process_save_session_info(self, channel_id, data, share_pdu_offset=0):
-		if channel_id != self.__joined_channels['MCS'].channel_id:
+		if data is None or channel_id != self.__joined_channels['MCS'].channel_id:
 			return False
 
 		try:

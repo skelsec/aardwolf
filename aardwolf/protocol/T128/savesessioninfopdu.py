@@ -2,7 +2,7 @@ import enum
 import io
 from typing import ClassVar
 
-from aardwolf.protocol.T128.share import PDUTYPE2, TS_SHAREDATAHEADER
+from aardwolf.protocol.T128.share import PDUTYPE, PDUTYPE2, TS_SHAREDATAHEADER
 
 
 class INFO_TYPE(enum.IntEnum):
@@ -140,14 +140,22 @@ class TS_SAVE_SESSION_INFO_PDU:
 
 	@staticmethod
 	def from_bytes(data: bytes):
+		if len(data) < 22:
+			raise ValueError('Save Session Info PDU is shorter than its headers')
 		return TS_SAVE_SESSION_INFO_PDU.from_buffer(io.BytesIO(data))
 
 	@staticmethod
 	def from_buffer(buff: io.BytesIO):
 		msg = TS_SAVE_SESSION_INFO_PDU()
 		msg.share_data_header = TS_SHAREDATAHEADER.from_buffer(buff)
+		if msg.share_data_header.shareControlHeader.pduType != PDUTYPE.DATAPDU:
+			raise ValueError('Save Session Info PDU is not a Data PDU')
 		if msg.share_data_header.pduType2 != PDUTYPE2.SAVE_SESSION_INFO:
 			raise ValueError('PDU is not Save Session Info')
+		total_length = msg.share_data_header.shareControlHeader.totalLength
+		available_length = len(buff.getbuffer())
+		if total_length < 22 or total_length > available_length:
+			raise ValueError('Save Session Info PDU has an invalid totalLength')
 
 		info_type_data = buff.read(4)
 		if len(info_type_data) != 4:
@@ -155,10 +163,7 @@ class TS_SAVE_SESSION_INFO_PDU:
 		msg.info_type_raw = int.from_bytes(
 			info_type_data, byteorder='little', signed=False
 		)
-		try:
-			msg.info_type = INFO_TYPE(msg.info_type_raw)
-		except ValueError:
-			msg.info_type = msg.info_type_raw
+		msg.info_type = INFO_TYPE(msg.info_type_raw)
 
 		if msg.info_type == INFO_TYPE.LOGON_EXTENDED_INFO:
 			msg.logon_info_extended = TS_LOGON_INFO_EXTENDED.from_buffer(buff)
