@@ -36,6 +36,7 @@ class RDPECLIPChannel(Channel):
 		self.server_caps = None
 		self.server_general_caps = None
 		self.client_general_caps_flags = CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES | CB_GENERAL_FLAGS.HUGE_FILE_SUPPORT_ENABLED | CB_GENERAL_FLAGS.FILECLIP_NO_FILE_PATHS | CB_GENERAL_FLAGS.STREAM_FILECLIP_ENABLED # | CB_GENERAL_FLAGS.CAN_LOCK_CLIPDATA
+		self.negotiated_general_caps_flags = CB_GENERAL_FLAGS(0)
 		self.current_server_formats = {}
 		self.__requested_format = None
 		self.__channel_fragment_buffer = b''
@@ -79,7 +80,13 @@ class RDPECLIPChannel(Channel):
 		try:
 			# sending capabilities
 			gencap = CLIPRDR_GENERAL_CAPABILITY()
-			gencap.generalFlags = self.client_general_caps_flags & self.server_general_caps.generalFlags
+			if self.server_general_caps is None:
+				# Server capabilities are optional. If omitted, MS-RDPECLIP
+				# defines default capabilities with generalFlags set to zero.
+				self.negotiated_general_caps_flags = CB_GENERAL_FLAGS(0)
+			else:
+				self.negotiated_general_caps_flags = self.client_general_caps_flags & self.server_general_caps.generalFlags
+			gencap.generalFlags = self.negotiated_general_caps_flags
 
 			logger.debug(f'Sending capabilities: {repr(gencap.generalFlags)}')
 
@@ -162,7 +169,8 @@ class RDPECLIPChannel(Channel):
 				# we expect either CLIPRDR_CAPS or CLIPRDR_MONITOR_READY
 				if hdr.msgType == CB_TYPE.CB_CLIP_CAPS:
 					self.server_caps = CLIPRDR_CAPS.from_bytes(payload[:hdr.dataLen])
-					self.server_general_caps = self.server_caps.capabilitySets[0] #it's always the generalflags
+					if self.server_caps.capabilitySets:
+						self.server_general_caps = self.server_caps.capabilitySets[0]
 					logger.debug(f'Received server capabilities: {self.server_general_caps}')
 				elif hdr.msgType == CB_TYPE.CB_MONITOR_READY:
 					_, err = await self.__send_capabilities()
@@ -197,7 +205,7 @@ class RDPECLIPChannel(Channel):
 			return None, e
 		
 	def _longnames_enabled(self) -> bool:
-		return CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags
+		return CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES in self.negotiated_general_caps_flags
 
 	def _get_format_name(self, format) -> str:
 		if self._longnames_enabled():

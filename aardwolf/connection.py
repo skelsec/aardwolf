@@ -230,8 +230,11 @@ class RDPConnection:
 	async def __aexit__(self, exc_type, exc, traceback):
 		await asyncio.wait_for(self.terminate(), timeout = 5)
 	
-	async def connect(self):
+	async def connect(self, auth_only=False):
 		"""Initiates the connection to the server, and performs authentication and all necessary setups.
+		When auth_only is True, returns immediately after CredSSP/NLA authentication
+		succeeds without establishing a full RDP session. This avoids creating a
+		disconnected session on single-session hosts (e.g. Windows 11).
 		Returns:
 			Tuple[bool, Exception]: _description_
 		"""
@@ -299,6 +302,9 @@ class RDPConnection:
 					if err is not None:
 						raise err
 					
+					if auth_only:
+						return True, None
+
 					#switching back to tpkt
 					self.__connection.change_packetizer(TPKTPacketizer())
 
