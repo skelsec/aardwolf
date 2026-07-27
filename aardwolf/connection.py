@@ -233,8 +233,8 @@ class RDPConnection:
 	async def connect(self, auth_only=False):
 		"""Initiates the connection to the server, and performs authentication and all necessary setups.
 		When auth_only is True, returns immediately after CredSSP/NLA authentication
-		succeeds without establishing a full RDP session. This avoids creating a
-		disconnected session on single-session hosts (e.g. Windows 11).
+		succeeds without establishing a full RDP session. Servers that do not
+		negotiate CredSSP return an error instead of silently creating a session.
 		Returns:
 			Tuple[bool, Exception]: _description_
 		"""
@@ -312,6 +312,12 @@ class RDPConnection:
 				# old RDP protocol is used
 				self.x224_protocol = SUPP_PROTOCOLS.RDP
 				self.x224_flag = None
+
+			if auth_only:
+				raise RuntimeError(
+					'auth_only requires CredSSP/NLA, but the server selected %s'
+					% self.x224_protocol
+				)
 
 			# initializing the parsers here otherwise they'd waste time on connections that did not get to this point
 			# not kidding, this takes ages
