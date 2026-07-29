@@ -122,8 +122,16 @@ class RDPECLIPChannel(Channel):
 			#hdr = CLIPRDR_HEADER.from_bytes(self.__buffer)
 
 			if self.status == CLIPBRDSTATUS.RUNNING:
-				#print(hdr.msgType)
-				if hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
+				# Handle server-side reinitialization (session reconnect or
+				# resume).  Per [MS-RDPECLIP] §3.2.5.1.2 the client MUST
+				# respond with capabilities + format list on every
+				# CB_MONITOR_READY receipt, including after reconnect.
+				if hdr.msgType in (CB_TYPE.CB_CLIP_CAPS, CB_TYPE.CB_MONITOR_READY):
+					logger.debug('Clipboard channel reinit from RUNNING state (reconnect)')
+					self.current_server_formats = {}
+					self.status = CLIPBRDSTATUS.WAITING_SERVER_INIT
+					return await self.__process_in(hdr, payload)
+				elif hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
 					encoding = 'ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le'
 					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(payload[:hdr.dataLen], longnames=self._longnames_enabled(), encoding=encoding)
 					await self._handle_format_list(fmtl)
