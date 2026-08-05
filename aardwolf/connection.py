@@ -2,6 +2,7 @@
 import io
 import ssl
 import copy
+import struct
 import typing
 import asyncio
 import traceback
@@ -76,6 +77,10 @@ from aardwolf.network.tpkt import TPKTPacketizer
 from aardwolf.network.tpkt import CredSSPPacketizer
 from asysocks.unicomm.common.packetizers import Packetizer
 
+# Early User Authorization Result PDU authorizationResult (MS-RDPBCGR 2.2.10.2)
+AUTHZ_SUCCESS = 0x00000000
+AUTHZ_ACCESS_DENIED = 0x00000005
+
 class RDPConnection:
 	def __init__(self, target:RDPTarget, credentials:UniCredential, iosettings:RDPIOSettings):
 		"""RDP client connection object. After successful connection the two asynchronous queues named `ext_out_queue` and `ext_in_queue`
@@ -106,6 +111,10 @@ class RDPConnection:
 
 		self.x224_connection_reply = None
 		self.x224_protocol = None
+		self.x224_flag = None
+		self.authz_result = None # Early User Authorization Result PDU, None if the server never sent one
+		self.logon_info_received = asyncio.Event() # set on the Save Session Info PDU (interactive logon completed)
+		self.logon_error = None # errorInfo of a non-zero Set Error Info PDU
 
 		self.__server_connect_pdu:TS_SC = None # serverconnectpdu message from server (holds security exchange data)
 		
@@ -241,7 +250,8 @@ class RDPConnection:
 						# user provided some secret but it's not a password
 						# here we request restricted admin mode
 						self.client_x224_flags = NEG_FLAGS.RESTRICTED_ADMIN_MODE_REQUIRED
-						self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL |SUPP_PROTOCOLS.HYBRID
+						# offer HYBRID_EX too, else the server never sends the Early User Authorization Result PDU
+						self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL | SUPP_PROTOCOLS.HYBRID_EX | SUPP_PROTOCOLS.HYBRID
 					else:
 						self.client_x224_flags = 0
 						self.client_x224_supported_protocols = SUPP_PROTOCOLS.RDP | SUPP_PROTOCOLS.SSL | SUPP_PROTOCOLS.HYBRID_EX | SUPP_PROTOCOLS.HYBRID
@@ -401,10 +411,12 @@ class RDPConnection:
 					if SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
 						self.__connection.change_packetizer(Packetizer())
 						authresult_raw = await self.__connection.read_one()
-						authresult = int.from_bytes(authresult_raw, byteorder='little', signed=False)
-						#print('Early User Authorization Result PDU %s' % authresult)
-						if authresult == 5:
-							raise Exception('Authentication failed! (early user auth)')
+						logger.debug('Early User Authorization Result PDU raw: %s' % authresult_raw.hex())
+						self.authz_result = int.from_bytes(authresult_raw[:4], byteorder='little', signed=False) # 4-byte result, rest belongs to the next PDU
+						if self.authz_result == AUTHZ_ACCESS_DENIED:
+							raise Exception('Authentication failed! (early user auth) The credentials are valid but the user is not allowed to access the server')
+						if self.authz_result != AUTHZ_SUCCESS:
+							logger.debug('Early User Authorization Result PDU: unexpected authorizationResult %s' % hex(self.authz_result))
 					return True, None
 				
 				await self.__connection.write(data)
@@ -711,7 +723,7 @@ class RDPConnection:
 
 			info = TS_INFO_PACKET()
 			info.CodePage = 0
-			info.flags = INFO_FLAG.ENABLEWINDOWSKEY|INFO_FLAG.MAXIMIZESHELL|INFO_FLAG.UNICODE|INFO_FLAG.DISABLECTRLALTDEL|INFO_FLAG.MOUSE
+			info.flags = INFO_FLAG.ENABLEWINDOWSKEY|INFO_FLAG.MAXIMIZESHELL|INFO_FLAG.UNICODE|INFO_FLAG.DISABLECTRLALTDEL|INFO_FLAG.MOUSE|INFO_FLAG.LOGONNOTIFY|INFO_FLAG.LOGONERRORS
 			info.Domain = ''
 			info.UserName = ''
 			info.Password = ''
@@ -1026,6 +1038,25 @@ class RDPConnection:
 		except Exception as e:
 			return None, e
 
+	def check_logon_status(self, data):
+		# Save Session Info PDU = interactive logon completed; absent when access was authorized but refused (restricted admin)
+		for offset in (0, 4):   # empty security header adds 4 bytes when encryptionLevel is 1
+			try:
+				shc = TS_SHARECONTROLHEADER.from_bytes(data[offset:])
+				if shc.pduType != PDUTYPE.DATAPDU:
+					return
+				shd = TS_SHAREDATAHEADER.from_bytes(data[offset:])
+			except (ValueError, struct.error):
+				continue   # not a share data PDU at this offset
+			if shd.pduType2 == PDUTYPE2.SAVE_SESSION_INFO:
+				self.logon_info_received.set()
+			elif shd.pduType2 == PDUTYPE2.SET_ERROR_INFO_PDU:
+				err = TS_SET_ERROR_INFO_PDU.from_bytes(data[offset:])
+				if err.errorInfoRaw != 0:
+					self.logon_error = err.errorInfo
+					logger.debug('Set Error Info PDU: %s (%s)' % (hex(err.errorInfoRaw), err.errorInfo.name))
+			return
+
 	async def __x224_reader(self):
 		# recieves X224 packets and fastpath packets, performs decryption if necessary then dispatches each packet to 
 		# the appropriate channel
@@ -1066,6 +1097,8 @@ class RDPConnection:
 									print('Decrypted data: %s' % data)
 									print('Original MAC  : %s' % sec_hdr.dataSignature)
 									print('Calculated MAC: %s' % mac)
+					if data is not None:
+						self.check_logon_status(data)
 					await self.__channel_id_lookup[x[1]['channelId']].process_channel_data(data)
 				else:
 					#print('fastpath data in -> %s' % len(response))
