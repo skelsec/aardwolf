@@ -27,6 +27,7 @@ from aardwolf.protocol.x224.server.connectionconfirm import RDP_NEG_RSP
 from aardwolf.protocol.pdu.input.keyboard import TS_KEYBOARD_EVENT, KBDFLAGS
 from aardwolf.protocol.pdu.input.unicode import TS_UNICODE_KEYBOARD_EVENT
 from aardwolf.protocol.pdu.input.mouse import PTRFLAGS, TS_POINTER_EVENT
+from aardwolf.protocol.pdu.input.sync import TS_SYNC, TS_SYNC_EVENT
 from aardwolf.protocol.pdu.capabilities import CAPSTYPE
 from aardwolf.protocol.pdu.capabilities.general import TS_GENERAL_CAPABILITYSET, OSMAJORTYPE, OSMINORTYPE, EXTRAFLAG
 from aardwolf.protocol.pdu.capabilities.bitmap import TS_BITMAP_CAPABILITYSET
@@ -229,8 +230,11 @@ class RDPConnection:
 	async def __aexit__(self, exc_type, exc, traceback):
 		await asyncio.wait_for(self.terminate(), timeout = 5)
 	
-	async def connect(self):
+	async def connect(self, auth_only=False):
 		"""Initiates the connection to the server, and performs authentication and all necessary setups.
+		When auth_only is True, returns immediately after CredSSP/NLA authentication
+		succeeds without establishing a full RDP session. Servers that do not
+		negotiate CredSSP return an error instead of silently creating a session.
 		Returns:
 			Tuple[bool, Exception]: _description_
 		"""
@@ -298,6 +302,9 @@ class RDPConnection:
 					if err is not None:
 						raise err
 					
+					if auth_only:
+						return True, None
+
 					#switching back to tpkt
 					self.__connection.change_packetizer(TPKTPacketizer())
 
@@ -305,6 +312,12 @@ class RDPConnection:
 				# old RDP protocol is used
 				self.x224_protocol = SUPP_PROTOCOLS.RDP
 				self.x224_flag = None
+
+			if auth_only:
+				raise RuntimeError(
+					'auth_only requires CredSSP/NLA, but the server selected %s'
+					% self.x224_protocol
+				)
 
 			# initializing the parsers here otherwise they'd waste time on connections that did not get to this point
 			# not kidding, this takes ages
@@ -1170,9 +1183,49 @@ class RDPConnection:
 		except Exception as e:
 			logger.error(f"Error: {e}, {traceback.format_exc()}")
 			return None, e
+
+	async def send_focus_in(self, toggle_flags=TS_SYNC(0)):
+		"""Tab release, Synchronize toggle keys, Tab release. Matches mstsc/FreeRDP focus-in behavior."""
+		_, err = await self.send_key_scancode(0x0F, False, False)
+		if err is not None:
+			return None, err
+
+		data_hdr = TS_SHAREDATAHEADER()
+		data_hdr.shareID = 0x103EA
+		data_hdr.streamID = STREAM_TYPE.MED
+		data_hdr.pduType2 = PDUTYPE2.INPUT
+
+		sync = TS_SYNC_EVENT()
+		sync.pad2Octets = b'\x00\x00'
+		sync.toggleFlags = toggle_flags
+		cli_input = TS_INPUT_PDU_DATA()
+		cli_input.slowPathInputEvents.append(TS_INPUT_EVENT.from_input(sync))
+
+		sec_hdr = None
+		if self.cryptolayer is not None:
+			sec_hdr = TS_SECURITY_HEADER()
+			sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
+			sec_hdr.flagsHi = 0
+
+		_, err = await self.handle_out_data(
+			cli_input,
+			sec_hdr,
+			data_hdr,
+			None,
+			self.__joined_channels['MCS'].channel_id,
+			False,
+		)
+		if err is not None:
+			return None, err
+		return await self.send_key_scancode(0x0F, False, False)
 	
 	async def send_key_scancode(self, scancode, is_pressed, is_extended, modifiers = VK_MODIFIERS(0)):
 		try:
+			# Extended scancodes (e.g. 0xE05B for Win) encode the flag in the high byte
+			if scancode > 0xFF:
+				scancode &= 0xFF
+				is_extended = True
+
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
 			data_hdr.streamID = STREAM_TYPE.MED
@@ -1183,7 +1236,7 @@ class RDPConnection:
 			kbi.keyboardFlags = 0
 			if is_pressed is False:
 				kbi.keyboardFlags |= KBDFLAGS.RELEASE
-			if is_extended is True or kbi.keyCode > 57000:
+			if is_extended is True:
 				kbi.keyboardFlags |= KBDFLAGS.EXTENDED
 			clii_kb = TS_INPUT_EVENT.from_input(kbi)
 			cli_input = TS_INPUT_PDU_DATA()
@@ -1195,7 +1248,10 @@ class RDPConnection:
 				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
 				sec_hdr.flagsHi = 0
 
-			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			_, err = await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			if err is not None:
+				return None, err
+			return True, None
 				
 
 		except Exception as e:
@@ -1224,7 +1280,9 @@ class RDPConnection:
 				sec_hdr.flags = SEC_HDR_FLAG.ENCRYPT
 				sec_hdr.flagsHi = 0
 
-			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			_, err = await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			if err is not None:
+				return None, err
 			return True, None
 
 		except Exception as e:
@@ -1277,7 +1335,10 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 					
-			await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			_, err = await self.handle_out_data(cli_input, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+			if err is not None:
+				return None, err
+			return True, None
 		except Exception as e:
 			logger.error(f"Error: {e}, {traceback.format_exc()}")
 			return None, e
@@ -1437,6 +1498,7 @@ class RDPConnection:
 				
 			else:
 				raise NotImplementedError("Fastpath output is not yet implemented")
+			return True, None
 
 		except Exception as e:
 			logger.error(f"Error: {e}, {traceback.format_exc()}")

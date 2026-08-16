@@ -11,7 +11,7 @@ from aardwolf.extensions.RDPECLIP.protocol import *
 from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import CLIPRDR_GENERAL_CAPABILITY, CB_GENERAL_FLAGS
 from aardwolf.protocol.channelpdu import CHANNEL_PDU_HEADER, CHANNEL_FLAG
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import CLIPBRD_FORMAT,CLIPRDR_SHORT_FORMAT_NAME, CLIPRDR_LONG_FORMAT_NAME
-from aardwolf.commons.queuedata import RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
+from aardwolf.commons.queuedata import RDP_CLIPBOARD_FORMAT_LIST_RESPONSE, RDP_CLIPBOARD_NEW_DATA_AVAILABLE, RDP_CLIPBOARD_READY, RDPDATATYPE
 from aardwolf.commons.queuedata.clipboard import RDP_CLIPBOARD_DATA, RDP_CLIPBOARD_DATA_TXT, RDP_CLIPBOARD_DATA_FILELIST
 from aardwolf.extensions.RDPECLIP.protocol.formatdataresponse import CLIPRDR_FILELIST
 from aardwolf.extensions.RDPECLIP.protocol.filecontentsresponse import CLIPRDR_FILECONTENTS_RESPONSE
@@ -36,6 +36,7 @@ class RDPECLIPChannel(Channel):
 		self.server_caps = None
 		self.server_general_caps = None
 		self.client_general_caps_flags = CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES | CB_GENERAL_FLAGS.HUGE_FILE_SUPPORT_ENABLED | CB_GENERAL_FLAGS.FILECLIP_NO_FILE_PATHS | CB_GENERAL_FLAGS.STREAM_FILECLIP_ENABLED # | CB_GENERAL_FLAGS.CAN_LOCK_CLIPDATA
+		self.negotiated_general_caps_flags = CB_GENERAL_FLAGS(0)
 		self.current_server_formats = {}
 		self.__requested_format = None
 		self.__channel_fragment_buffer = b''
@@ -68,7 +69,8 @@ class RDPECLIPChannel(Channel):
 			return None, e
 
 	async def stop(self):
-		try:				
+		try:
+			self.clipboard.unregister_handler(self)
 			return True, None
 		except Exception as e:
 			return None, e
@@ -78,7 +80,13 @@ class RDPECLIPChannel(Channel):
 		try:
 			# sending capabilities
 			gencap = CLIPRDR_GENERAL_CAPABILITY()
-			gencap.generalFlags = self.client_general_caps_flags & self.server_general_caps.generalFlags
+			if self.server_general_caps is None:
+				# Server capabilities are optional. If omitted, MS-RDPECLIP
+				# defines default capabilities with generalFlags set to zero.
+				self.negotiated_general_caps_flags = CB_GENERAL_FLAGS(0)
+			else:
+				self.negotiated_general_caps_flags = self.client_general_caps_flags & self.server_general_caps.generalFlags
+			gencap.generalFlags = self.negotiated_general_caps_flags
 
 			logger.debug(f'Sending capabilities: {repr(gencap.generalFlags)}')
 
@@ -114,8 +122,16 @@ class RDPECLIPChannel(Channel):
 			#hdr = CLIPRDR_HEADER.from_bytes(self.__buffer)
 
 			if self.status == CLIPBRDSTATUS.RUNNING:
-				#print(hdr.msgType)
-				if hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
+				# Handle server-side reinitialization (session reconnect or
+				# resume).  Per [MS-RDPECLIP] §3.2.5.1.2 the client MUST
+				# respond with capabilities + format list on every
+				# CB_MONITOR_READY receipt, including after reconnect.
+				if hdr.msgType in (CB_TYPE.CB_CLIP_CAPS, CB_TYPE.CB_MONITOR_READY):
+					logger.debug('Clipboard channel reinit from RUNNING state (reconnect)')
+					self.current_server_formats = {}
+					self.status = CLIPBRDSTATUS.WAITING_SERVER_INIT
+					return await self.__process_in(hdr, payload)
+				elif hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
 					encoding = 'ascii' if CB_FLAG.CB_ASCII_NAMES in hdr.msgFlags else 'utf-16-le'
 					fmtl = CLIPRDR_FORMAT_LIST.from_bytes(payload[:hdr.dataLen], longnames=self._longnames_enabled(), encoding=encoding)
 					await self._handle_format_list(fmtl)
@@ -152,14 +168,17 @@ class RDPECLIPChannel(Channel):
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_LIST_RESPONSE:
 					if CB_FLAG.CB_RESPONSE_OK in hdr.msgFlags:
 						logger.debug('Server accepted our copy request!')
+						await self.send_user_data(RDP_CLIPBOARD_FORMAT_LIST_RESPONSE(True))
 					else:
 						logger.debug('Server rejected our copy request!')
+						await self.send_user_data(RDP_CLIPBOARD_FORMAT_LIST_RESPONSE(False))
 			
 			elif self.status == CLIPBRDSTATUS.WAITING_SERVER_INIT:
 				# we expect either CLIPRDR_CAPS or CLIPRDR_MONITOR_READY
 				if hdr.msgType == CB_TYPE.CB_CLIP_CAPS:
 					self.server_caps = CLIPRDR_CAPS.from_bytes(payload[:hdr.dataLen])
-					self.server_general_caps = self.server_caps.capabilitySets[0] #it's always the generalflags
+					if self.server_caps.capabilitySets:
+						self.server_general_caps = self.server_caps.capabilitySets[0]
 					logger.debug(f'Received server capabilities: {self.server_general_caps}')
 				elif hdr.msgType == CB_TYPE.CB_MONITOR_READY:
 					_, err = await self.__send_capabilities()
@@ -194,7 +213,7 @@ class RDPECLIPChannel(Channel):
 			return None, e
 		
 	def _longnames_enabled(self) -> bool:
-		return CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES in self.client_general_caps_flags
+		return CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES in self.negotiated_general_caps_flags
 
 	def _get_format_name(self, format) -> str:
 		if self._longnames_enabled():
