@@ -75,13 +75,9 @@ class RDPIOSettings:
 	def clone_for_connection(self):
 		settings = RDPIOSettings()
 		for name, value in vars(self).items():
-			if name == 'channels':
-				settings.channels = list(value)
-			elif name == 'vchannels':
-				settings.vchannels = copy.deepcopy(value)
-			elif name == 'clipboard':
+			if name == 'clipboard':
 				settings.clipboard = value.clone_for_connection()
 			else:
-				setattr(settings, name, value)
+				setattr(settings, name, copy.deepcopy(value))
 		return settings
 		
