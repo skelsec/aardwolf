@@ -1,3 +1,5 @@
+import copy
+
 from aardwolf.extensions.RDPECLIP.channel import RDPECLIPChannel
 from aardwolf.extensions.RDPECLIP.clipboard import Clipboard
 from aardwolf.protocol.x224.constants import SUPP_PROTOCOLS, NEG_FLAGS
@@ -78,4 +80,13 @@ class RDPIOSettings:
 		# Each value corresponds to an encoding type and only these three anre implemented currently.
 		# The order signifies the preference to the server but the server can decide to ignore it
 		self.vnc_encodings = [2, 1, 0]
+
+	def clone_for_connection(self):
+		settings = RDPIOSettings()
+		for name, value in vars(self).items():
+			if name == 'clipboard':
+				settings.clipboard = value.clone_for_connection()
+			else:
+				setattr(settings, name, copy.deepcopy(value))
+		return settings
 		

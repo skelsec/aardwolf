@@ -20,6 +20,12 @@ class RDP_CLIPBOARD_CONSUMED:
 	"""
 	def __init__(self):
 		self.type = RDPDATATYPE.CLIPBOARD_CONSUMED
+
+class RDP_CLIPBOARD_FORMAT_LIST_RESPONSE:
+	"""Signals the server response to a client clipboard format announcement."""
+	def __init__(self, accepted:bool):
+		self.type = RDPDATATYPE.CLIPBOARD_FORMAT_LIST_RESPONSE
+		self.accepted = accepted
 	
 class RDP_CLIPBOARD_NEW_DATA_AVAILABLE:
 	"""

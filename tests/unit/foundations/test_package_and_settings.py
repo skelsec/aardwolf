@@ -95,6 +95,36 @@ def test_iosettings_defaults():
     assert all(getattr(channel, "name", None) != "rdpdr" for channel in settings.channels)
 
 
+def test_iosettings_clone_isolates_configuration_and_resets_clipboard_runtime():
+    settings = RDPIOSettings()
+    settings.drives = [{"paths": ["share"]}]
+    custom_format = settings.clipboard.register_format("application/x-aardwolf")
+    settings.clipboard.data = object()
+    settings.clipboard._file_paths.append("runtime-only")
+    settings.clipboard.register_handler(object())
+
+    clone = settings.clone_for_connection()
+
+    assert clone is not settings
+    assert clone.channels is not settings.channels
+    assert clone.vchannels is not settings.vchannels
+    assert clone.vchannels["ECHO"] is not settings.vchannels["ECHO"]
+    assert clone.drives is not settings.drives
+    assert clone.clipboard is not settings.clipboard
+    assert clone.clipboard.formats[custom_format] == "application/x-aardwolf"
+
+    clone.video_bpp_supported.append(48)
+    clone.drives[0]["paths"].append("clone-only")
+    clone.clipboard.register_format("application/x-clone-only")
+
+    assert 48 not in settings.video_bpp_supported
+    assert settings.drives == [{"paths": ["share"]}]
+    assert "application/x-clone-only" not in settings.clipboard.formats.values()
+    assert clone.clipboard.data is None
+    assert clone.clipboard._file_paths == []
+    assert clone.clipboard._handlers == []
+
+
 def test_connection_joins_rdpdr_when_drives_configured():
     settings = RDPIOSettings()
     settings.drives = [MemoryDriveProvider("MEM", {"a.txt": b"a"})]

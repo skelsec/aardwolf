@@ -14,7 +14,7 @@ class TS_SYNC_EVENT:
 
 	def to_bytes(self):
 		t = self.pad2Octets
-		t += self.toggleFlags.to_bytes(2, byteorder='little', signed=False)
+		t += self.toggleFlags.to_bytes(4, byteorder='little', signed=False)
 		return t
 
 	@staticmethod
@@ -25,7 +25,7 @@ class TS_SYNC_EVENT:
 	def from_buffer(buff: io.BytesIO):
 		msg = TS_SYNC_EVENT()
 		msg.pad2Octets = buff.read(2)
-		msg.toggleFlags = TS_SYNC(int.from_bytes(buff.read(2), byteorder='little', signed=False))
+		msg.toggleFlags = TS_SYNC(int.from_bytes(buff.read(4), byteorder='little', signed=False))
 		return msg
 
 	def __repr__(self):

@@ -40,6 +40,16 @@ class Clipboard:
 	def formats(self) -> Dict[int, str]:
 		return self._formats
 
+	def clone_for_connection(self):
+		clipboard = Clipboard(
+			file_provider=self._file_provider,
+			file_sink=self._file_sink,
+		)
+		clipboard._formats = dict(self._formats)
+		clipboard._next_format_id = self._next_format_id
+		clipboard.file_copy_id = self.file_copy_id
+		return clipboard
+
 	def register_format(self, format_name:str) -> int:
 		for k, v in self._formats.items():
 			if v == format_name:
@@ -51,6 +61,10 @@ class Clipboard:
 
 	def register_handler(self, handler:ClipboardHandler):
 		self._handlers.append(handler)
+
+	def unregister_handler(self, handler:ClipboardHandler):
+		if handler in self._handlers:
+			self._handlers.remove(handler)
 
 	def get_file_size(self, index:int) -> int:
 		file_path = self._get_file_at_index(index)
@@ -223,5 +237,5 @@ class Clipboard:
 
 	async def notify_copy(self, data:RDP_CLIPBOARD_DATA):
 		# Inform the channel of a copy
-		for handler in self._handlers:
+		for handler in list(self._handlers):
 			await handler.on_copy(data)

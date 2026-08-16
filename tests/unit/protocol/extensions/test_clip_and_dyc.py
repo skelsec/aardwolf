@@ -2,7 +2,14 @@
 
 import pytest
 
+from aardwolf.commons.iosettings import RDPIOSettings
+from aardwolf.extensions.RDPECLIP.channel import CLIPBRDSTATUS, RDPECLIPChannel
 from aardwolf.extensions.RDPECLIP.protocol import CB_FLAG, CB_TYPE, CLIPRDR_HEADER
+from aardwolf.extensions.RDPECLIP.protocol.clipboardcapabilities import (
+    CB_GENERAL_FLAGS,
+    CLIPRDR_CAPS,
+    CLIPRDR_GENERAL_CAPABILITY,
+)
 from aardwolf.extensions.RDPECLIP.protocol.formatdatarequest import CLIPRDR_FORMAT_DATA_REQUEST
 from aardwolf.extensions.RDPECLIP.protocol.formatlist import (
     CLIPBRD_FORMAT,
@@ -59,6 +66,54 @@ def test_cliprdr_format_data_request_round_trip():
     header, body = CLIPRDR_HEADER.parse_packet_bytes(wire)
     assert header.msgType == CB_TYPE.CB_FORMAT_DATA_REQUEST
     assert body.requestedFormatId == CLIPBRD_FORMAT.CF_UNICODETEXT
+
+
+@pytest.mark.asyncio
+async def test_cliprdr_reconnect_with_empty_capabilities_clears_stale_flags():
+    settings = RDPIOSettings()
+    settings.clipboard_use_pyperclip = False
+    channel = RDPECLIPChannel(settings)
+    channel.status = CLIPBRDSTATUS.RUNNING
+
+    old_caps = CLIPRDR_GENERAL_CAPABILITY()
+    old_caps.generalFlags = CB_GENERAL_FLAGS.USE_LONG_FORMAT_NAMES
+    channel.server_general_caps = old_caps
+    channel.negotiated_general_caps_flags = old_caps.generalFlags
+
+    sent = []
+
+    async def capture_packet(data):
+        sent.append(data)
+        return True, None
+
+    channel.fragment_and_send = capture_packet
+
+    empty_caps = CLIPRDR_CAPS().to_bytes()
+    caps_header = CLIPRDR_HEADER()
+    caps_header.msgType = CB_TYPE.CB_CLIP_CAPS
+    caps_header.msgFlags = CB_FLAG(0)
+    caps_header.dataLen = len(empty_caps)
+    result, error = await channel._RDPECLIPChannel__process_in(caps_header, empty_caps)
+
+    assert result is True
+    assert error is None
+    assert channel.server_general_caps is None
+    assert channel.negotiated_general_caps_flags == 0
+
+    ready_header = CLIPRDR_HEADER()
+    ready_header.msgType = CB_TYPE.CB_MONITOR_READY
+    ready_header.msgFlags = CB_FLAG(0)
+    ready_header.dataLen = 0
+    result, error = await channel._RDPECLIPChannel__process_in(ready_header, b"")
+
+    assert result is True
+    assert error is None
+    assert channel.status == CLIPBRDSTATUS.CLIENT_INIT
+    response_header = CLIPRDR_HEADER.from_bytes(sent[0])
+    response_caps = CLIPRDR_CAPS.from_bytes(sent[0][8:])
+    assert response_header.msgType == CB_TYPE.CB_CLIP_CAPS
+    assert response_caps.capabilitySets[0].generalFlags == 0
+    assert channel._longnames_enabled() is False
 
 
 def test_dynvc_create_request_round_trip():
