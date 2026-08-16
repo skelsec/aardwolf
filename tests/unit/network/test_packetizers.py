@@ -9,6 +9,8 @@ from aardwolf.protocol.x224.data import Data
 
 pytestmark = pytest.mark.unit
 
+MINIMUM_TSREQUEST = bytes.fromhex("3005a003020106")
+
 
 @pytest.mark.asyncio
 async def test_tpkt_packetizer_emits_complete_slow_path_packets():
@@ -72,29 +74,29 @@ async def test_tpkt_packetizer_wraps_outbound_tpkt():
 
 
 @pytest.mark.asyncio
-async def test_credssp_packetizer_short_length():
+async def test_credssp_packetizer_emits_minimum_tsrequest():
     packetizer = CredSSPPacketizer()
-    payload = bytes([0x30, 0x04, 0x01, 0x02, 0x03, 0x04])
     packets = []
-    async for item in packetizer.data_in(payload):
+    async for item in packetizer.data_in(MINIMUM_TSREQUEST):
         if item is not None:
             packets.append(item)
-    assert packets == [payload]
+    assert packets == [MINIMUM_TSREQUEST]
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason="KF-0002: CredSSP packetizer waits for 6 header bytes before decoding short BER",
-)
-async def test_credssp_packetizer_short_ber_under_preread():
+async def test_credssp_packetizer_buffers_fragmented_minimum_tsrequest():
     packetizer = CredSSPPacketizer()
-    payload = bytes([0x30, 0x03, 0x01, 0x02, 0x03])
-    packets = []
-    async for item in packetizer.data_in(payload):
+    first_packets = []
+    async for item in packetizer.data_in(MINIMUM_TSREQUEST[:6]):
         if item is not None:
-            packets.append(item)
-    assert packets == [payload]
+            first_packets.append(item)
+    assert first_packets == []
+
+    completed_packets = []
+    async for item in packetizer.data_in(MINIMUM_TSREQUEST[6:]):
+        if item is not None:
+            completed_packets.append(item)
+    assert completed_packets == [MINIMUM_TSREQUEST]
 
 
 def test_credssp_length_long_form():

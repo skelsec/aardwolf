@@ -120,13 +120,10 @@ def test_x224_data_parse_and_dispatch():
     assert isinstance(dispatched, Data)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="KF-0001: Data.from_bytes stores TPDU_NR as int so to_bytes cannot round-trip",
-)
 def test_x224_data_round_trip():
     data = Data()
     data.data = b"payload"
     wire = data.to_bytes()
     parsed = Data.from_bytes(wire)
+    assert parsed.TPDU_NR == 0x80
     assert parsed.to_bytes() == wire
