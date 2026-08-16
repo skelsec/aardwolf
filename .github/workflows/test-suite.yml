@@ -1,0 +1,156 @@
+name: Test suite - offline
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    name: Offline Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.11"
+            artifact: py311
+          - python: "3.13"
+            artifact: py313
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install -r requirements-test.txt
+
+      - name: Capture base known-failure registry
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          mkdir -p reports
+          if [ -n "${BASE_SHA}" ] &&
+             git cat-file -e "${BASE_SHA}:tests/known_failures.yml" 2>/dev/null
+          then
+            git show "${BASE_SHA}:tests/known_failures.yml" \
+              > reports/known-failures.base.yml
+          fi
+
+      - name: Run infrastructure-free suite
+        env:
+          PYTHONHASHSEED: "0"
+        run: |
+          mkdir -p reports test-results
+          python -m pytest tests/unit tests/fake_peer tests/component \
+            --junitxml=test-results/junit.xml \
+            --cov=aardwolf \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/coverage.xml
+
+      - name: Build sanitized test report
+        if: always()
+        run: |
+          report_args=(
+            --junit test-results/junit.xml
+            --registry tests/known_failures.yml
+            --json-output reports/test-summary.json
+            --markdown-output reports/test-summary.md
+          )
+          if [ -f reports/known-failures.base.yml ]; then
+            report_args+=(
+              --baseline-registry reports/known-failures.base.yml
+            )
+          fi
+          python tests/support/reporting.py "${report_args[@]}"
+          cat reports/test-summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload sanitized offline artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-${{ matrix.artifact }}
+          path: |
+            reports/coverage.xml
+            reports/test-summary.json
+            reports/test-summary.md
+            test-results/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  rust-codecs:
+    name: Rust codec unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run workspace tests
+        working-directory: rust
+        env:
+          PYO3_NO_PYTHON: "1"
+        run: cargo test --workspace
+
+  registry:
+    name: Strict known-failure registry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up current Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install -r requirements-test.txt
+
+      - name: Validate registry contract
+        env:
+          PYTHONHASHSEED: "0"
+        run: |
+          mkdir -p test-results
+          python -m pytest \
+            tests/component/packaging_security/test_packaging_and_registry.py \
+            --junitxml=test-results/registry.xml
+
+      - name: Upload registry validation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-registry
+          path: test-results/registry.xml
+          if-no-files-found: warn
+          retention-days: 14

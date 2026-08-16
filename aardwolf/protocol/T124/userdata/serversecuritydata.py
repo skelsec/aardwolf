@@ -33,7 +33,7 @@ class SERVER_CERTIFICATE:
 	def from_buffer(buff: io.BytesIO):
 		msg = SERVER_CERTIFICATE()
 		temp = int.from_bytes(buff.read(4), byteorder='little', signed = False)
-		msg.certChainVersion = CERT_CHAIN_VERSION((temp << 1) >> 1)
+		msg.certChainVersion = CERT_CHAIN_VERSION(temp & 0x7FFFFFFF)
 		msg.t = bool(temp >> 31)
 		if msg.certChainVersion in [CERT_CHAIN_VERSION.VERSION_1, CERT_CHAIN_VERSION.VERSION_0]:
 			msg.certificate = PROPRIETARYSERVERCERTIFICATE.from_buffer(buff)
@@ -41,7 +41,35 @@ class SERVER_CERTIFICATE:
 			msg.modulus = int.from_bytes(msg.certificate.PublicKeyBlob.modulus, byteorder='little', signed=False)
 			msg.bitlen = msg.certificate.PublicKeyBlob.bitlen
 		else:
-			msg.certificate = Certificate.load(buff.read())
+			num_cert_blobs_raw = buff.read(4)
+			if len(num_cert_blobs_raw) != 4:
+				raise ValueError('Truncated X.509 certificate chain')
+			num_cert_blobs = int.from_bytes(num_cert_blobs_raw, byteorder='little', signed=False)
+			if num_cert_blobs < 2 or num_cert_blobs > 200:
+				raise ValueError('Invalid X.509 certificate count: %s' % num_cert_blobs)
+
+			cert_data = None
+			for _ in range(num_cert_blobs):
+				cert_len_raw = buff.read(4)
+				if len(cert_len_raw) != 4:
+					raise ValueError('Truncated X.509 certificate length')
+				cert_len = int.from_bytes(cert_len_raw, byteorder='little', signed=False)
+				if cert_len < 1:
+					raise ValueError('Invalid empty X.509 certificate')
+				cert_data = buff.read(cert_len)
+				if len(cert_data) != cert_len:
+					raise ValueError('Truncated X.509 certificate')
+
+			padding_len = 8 + (4 * num_cert_blobs)
+			if len(buff.read(padding_len)) != padding_len:
+				raise ValueError('Truncated X.509 certificate chain padding')
+			if buff.read(1) != b'':
+				raise ValueError('Trailing data in X.509 certificate chain')
+
+			# Chains are root-first; the final certificate belongs to the
+			# terminal server and contains the RSA key used by RDP security.
+			msg.certData = cert_data
+			msg.certificate = Certificate.load(cert_data)
 			msg.exponent = msg.certificate.public_key.native["public_key"]["public_exponent"]
 			msg.modulus = msg.certificate.public_key.native["public_key"]["modulus"]
 			msg.bitlen = msg.certificate.public_key.native["public_key"]["modulus"].bit_length()
@@ -52,8 +80,12 @@ class SERVER_CERTIFICATE:
 		# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/761e2583-6406-4a71-bfec-cca52294c099
 		# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/6fd7c8aa-884b-4b43-b036-c86d9d6737e6 <<< little???!!!
 		
-		temp = pow(int.from_bytes(secret, byteorder='little', signed = False), self.exponent, self.modulus)
-		return temp.to_bytes((temp.bit_length() + 7) // 8, 'little').ljust((self.bitlen // 8) + 8, b'\x00')
+		secret_value = int.from_bytes(secret, byteorder='little', signed=False)
+		if secret_value >= self.modulus:
+			raise ValueError('RSA plaintext is larger than the server modulus')
+		modulus_length = (self.bitlen + 7) // 8
+		encrypted = pow(secret_value, self.exponent, self.modulus)
+		return encrypted.to_bytes(modulus_length, 'little') + (b'\x00' * 8)
 
 
 	def __repr__(self):

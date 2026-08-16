@@ -1,0 +1,26 @@
+schema_version: 1
+name: tigervnc-disposable
+
+target:
+  host: 127.0.0.1
+  port: 15900
+
+authentication:
+  username_environment: AARDWOLF_VNC_USERNAME
+  password_environment: AARDWOLF_VNC_PASSWORD
+  # These values are intentionally public and valid only for this disposable lab.
+  test_only_default_username: aardwolftest
+  test_only_default_password: Aardwolf-Test-Only-1!
+
+environment_overrides:
+  host: AARDWOLF_VNC_HOST
+  port: AARDWOLF_VNC_PORT
+
+safety:
+  disposable: true
+  allow_destructive: false
+
+capabilities:
+  - protocol_probe
+  - vnc_password
+  - framebuffer

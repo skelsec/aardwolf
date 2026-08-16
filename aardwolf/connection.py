@@ -38,6 +38,7 @@ from aardwolf.protocol.pdu.capabilities.input import TS_INPUT_CAPABILITYSET, INP
 from aardwolf.protocol.pdu.capabilities.pointer import TS_POINTER_CAPABILITYSET
 from aardwolf.protocol.pdu.capabilities.bitmapcache import TS_BITMAPCACHE_CAPABILITYSET
 from aardwolf.protocol.pdu.capabilities.order import TS_ORDER_CAPABILITYSET, ORDERFLAG
+from aardwolf.protocol.pdu.capabilities.multifragmentupdate import TS_MULTIFRAGMENTUPDATE_CAPABILITYSET
 
 from aardwolf.protocol.T124.GCCPDU import GCCPDU
 from aardwolf.protocol.T124.userdata import TS_UD, TS_SC
@@ -60,11 +61,36 @@ from aardwolf.protocol.T128.inputeventpdu import TS_SHAREDATAHEADER, TS_INPUT_EV
 from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
 from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
 from aardwolf.protocol.T128.shutdownreqpdu import TS_SHUTDOWN_REQ_PDU
-from aardwolf.protocol.T128.share import PDUTYPE, STREAM_TYPE, PDUTYPE2
+from aardwolf.protocol.T128.share import (
+	PDUTYPE,
+	STREAM_TYPE,
+	PDUTYPE2,
+	normalize_share_data_pdu,
+)
+from aardwolf.protocol.channelpdu import normalize_channel_pdu
+from aardwolf.protocol.T128.licensing import (
+	RDPLicenseManager,
+	extract_license_pdu,
+	LicensingProtocolError,
+)
 
 
 
-from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU, FASTPATH_UPDATETYPE, FASTPATH_FRAGMENT, FASTPATH_SEC, TS_FP_UPDATE
+from aardwolf.protocol.fastpath import (
+	TS_FP_UPDATE_PDU,
+	FASTPATH_UPDATETYPE,
+	FASTPATH_SEC,
+	FASTPATH_OUTPUT_COMPRESSION,
+	TS_FP_UPDATE,
+)
+from aardwolf.protocol.fastpath.reassembly import (
+	FastPathFragmentReassembler,
+)
+from aardwolf.protocol.compression import (
+	BulkCompressionError,
+	BulkCompressionType,
+	BulkDecompressor,
+)
 from aardwolf.commons.queuedata import RDPDATATYPE, RDP_KEYBOARD_SCANCODE, RDP_KEYBOARD_UNICODE, RDP_MOUSE, RDP_VIDEO
 from aardwolf.channels import MCSChannel
 from aardwolf.commons.iosettings import RDPIOSettings
@@ -113,7 +139,12 @@ class RDPConnection:
 		self.__channel_id_lookup = {}
 		self.__joined_channels =  OrderedDict({})
 		
-		for channel in self.iosettings.channels:
+		channels = list(self.iosettings.channels)
+		if getattr(self.iosettings, 'drives', None):
+			from aardwolf.extensions.RDPEFS.channel import RDPDRChannel
+			if not any(getattr(channel, 'name', None) == 'rdpdr' for channel in channels):
+				channels.append(RDPDRChannel)
+		for channel in channels:
 			self.__joined_channels[channel.name] = channel(self.iosettings)
 		
 		self.__channel_task = {} #name -> channeltask
@@ -127,6 +158,21 @@ class RDPConnection:
 		self.__desktop_buffer = None
 		self.desktop_buffer_has_data = False
 		self.__terminate_called = False
+		self.__pending_mcs_data = None
+		self.__fastpath_reassembler = FastPathFragmentReassembler(
+			self.iosettings.fastpath_max_request_size
+		)
+		bulk_compression_max_type = getattr(
+			self.iosettings,
+			'bulk_compression_max_type',
+			BulkCompressionType.RDP61,
+		)
+		self.bulk_decompressor = None
+		if bulk_compression_max_type is not None:
+			self.bulk_decompressor = BulkDecompressor(
+				bulk_compression_max_type,
+				self.iosettings.fastpath_max_request_size,
+			)
 
 		self.__vk_to_sc = {
 			'VK_BACK'     : 14,
@@ -213,6 +259,31 @@ class RDPConnection:
 			self.disconnected_evt.set()
 			if self.__connection is not None:
 				await self.__connection.close()
+
+	async def __cleanup_failed_connect(self):
+		"""Closes a partially established connection without session shutdown."""
+		self.__terminate_called = True
+
+		for channel in self.__joined_channels.values():
+			await channel.disconnect()
+
+		tasks = []
+		for task in [
+			self.__external_reader_task,
+			self.__x224_reader_task,
+			*self.__channel_task.values(),
+		]:
+			if task is not None and task is not asyncio.current_task() and not task.done():
+				task.cancel()
+				tasks.append(task)
+		if tasks:
+			await asyncio.gather(*tasks, return_exceptions=True)
+
+		if self.__connection is not None:
+			try:
+				await self.__connection.close()
+			except Exception:
+				pass
 	
 	async def __aenter__(self):
 		return self
@@ -256,7 +327,14 @@ class RDPConnection:
 			
 			logger.debug('Client protocol flags: %s' % self.client_x224_flags)
 			logger.debug('Client protocol offer: %s' % self.client_x224_supported_protocols)
-			connection_accepted_reply, err = await self._x224net.client_negotiate(self.client_x224_flags, self.client_x224_supported_protocols)
+			cookie_identifier = None
+			if self.credentials is not None:
+				cookie_identifier = self.credentials.username
+			connection_accepted_reply, err = await self._x224net.client_negotiate(
+				self.client_x224_flags,
+				self.client_x224_supported_protocols,
+				cookie_identifier=cookie_identifier,
+			)
 			if err is not None:
 				raise err
 			
@@ -351,7 +429,17 @@ class RDPConnection:
 			logger.debug('RDP connection sequence done')
 			self.__desktop_buffer = Image.new(mode="RGBA", size=(self.iosettings.video_width, self.iosettings.video_height))
 			return True, None
+		except asyncio.CancelledError:
+			cleanup_task = asyncio.create_task(self.__cleanup_failed_connect())
+			try:
+				await asyncio.shield(cleanup_task)
+			except asyncio.CancelledError:
+				# A second cancellation must not propagate into cleanup.
+				pass
+			self.disconnected_evt.set()
+			raise
 		except Exception as e:
+			await self.__cleanup_failed_connect()
 			self.disconnected_evt.set()
 			return None, e
 	
@@ -712,6 +800,11 @@ class RDPConnection:
 			info = TS_INFO_PACKET()
 			info.CodePage = 0
 			info.flags = INFO_FLAG.ENABLEWINDOWSKEY|INFO_FLAG.MAXIMIZESHELL|INFO_FLAG.UNICODE|INFO_FLAG.DISABLECTRLALTDEL|INFO_FLAG.MOUSE
+			if self.bulk_decompressor is not None:
+				info.flags |= INFO_FLAG.COMPRESSION
+				info.flags |= INFO_FLAG(
+					int(self.bulk_decompressor.max_compression_type) << 9
+				)
 			info.Domain = ''
 			info.UserName = ''
 			info.Password = ''
@@ -739,23 +832,79 @@ class RDPConnection:
 
 	async def __handle_license(self):
 		try:
-			# TODO: implement properly
-			# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/7d941d0d-d482-41c5-b728-538faa3efb31
-			data, err = await self.__joined_channels['MCS'].out_queue.get()
-			if err is not None:
-				raise err
-			
-			res = self._t125_per_codec.decode('DomainMCSPDU', data)
-			if res[0] == 'tokenInhibitConfirm':
-				if res[1]['result'] != 'rt-successful':
-					raise Exception('License error! tokenInhibitConfirm:result not successful')
-			else:
-				raise Exception('tokenInhibitConfirm did not show up in reply!')
+			username = ''
+			if self.credentials is not None and self.credentials.username is not None:
+				username = self.credentials.username
 
-			return True, None
+			server_certificate = None
+			server_security = self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY]
+			if server_security is not None:
+				server_certificate = server_security.serverCertificate
+
+			license_manager = RDPLicenseManager(
+				username=username,
+				server_certificate=server_certificate,
+			)
+			license_timeout = self.target.timeout if self.target.timeout else 10
+			license_deadline = asyncio.get_running_loop().time() + license_timeout
+
+			# A normal exchange is one packet (STATUS_VALID_CLIENT), while a
+			# no-cache CAL acquisition is request, challenge, then license.
+			# Keep a hard bound so malformed reset/resend sequences cannot loop.
+			for _ in range(8):
+				remaining_timeout = license_deadline - asyncio.get_running_loop().time()
+				if remaining_timeout <= 0:
+					raise LicensingProtocolError(
+						'Server did not complete the RDP licensing phase within timeout'
+					)
+				try:
+					data, err = await asyncio.wait_for(
+						self.__joined_channels['MCS'].out_queue.get(),
+						timeout=remaining_timeout,
+					)
+				except asyncio.TimeoutError as e:
+					raise LicensingProtocolError(
+						'Server did not complete the RDP licensing phase within timeout'
+					) from e
+				if err is not None:
+					raise err
+
+				license_data = extract_license_pdu(data)
+				if license_data is None:
+					# Some servers omit licensing and proceed directly to the
+					# Demand Active PDU. Preserve it for capability exchange.
+					self.__pending_mcs_data = (data, None)
+					return True, None
+
+				_, license_pdu = license_data
+				complete, response = license_manager.process(license_pdu)
+				if response is not None:
+					await self.__send_license_data(response)
+				if complete:
+					return True, None
+
+			raise LicensingProtocolError('RDP licensing exchange exceeded the message limit')
 		except Exception as e:
 			logger.error(f"Error: {e}, {traceback.format_exc()}")
 			return None, e
+
+	async def __send_license_data(self, data: bytes):
+		sec_hdr = TS_SECURITY_HEADER()
+		sec_hdr.flags = SEC_HDR_FLAG.LICENSE_PKT
+		sec_hdr.flagsHi = 0
+		userdata = sec_hdr.to_bytes() + data
+		data_wrapper = {
+			'initiator': self._initiator,
+			'channelId': self.__joined_channels['MCS'].channel_id,
+			'dataPriority': 'high',
+			'segmentation': (b'\xc0', 2),
+			'userData': userdata,
+		}
+		userdata_wrapped = self._t125_per_codec.encode(
+			'DomainMCSPDU',
+			('sendDataRequest', data_wrapper),
+		)
+		await self._x224net.write(userdata_wrapped)
 	
 	async def __handle_mandatory_capability_exchange(self):
 		try:
@@ -767,11 +916,15 @@ class RDPConnection:
 			# asyncio.wait_for on connect() fires first with a generic TimeoutError,
 			# masking the real server behaviour. Use half the target timeout so we
 			# still surface a useful error before the outer wait_for kicks in.
-			try:
-				cap_timeout = max(1, (self.target.timeout if self.target.timeout else 10) // 2)
-				data, err = await asyncio.wait_for(self.__joined_channels['MCS'].out_queue.get(), timeout=cap_timeout)
-			except asyncio.TimeoutError:
-				raise Exception('Server did not send DEMANDACTIVEPDU within timeout. The server may have RDS licensing or Connection Broker issues.')
+			if self.__pending_mcs_data is not None:
+				data, err = self.__pending_mcs_data
+				self.__pending_mcs_data = None
+			else:
+				try:
+					cap_timeout = max(1, (self.target.timeout if self.target.timeout else 10) // 2)
+					data, err = await asyncio.wait_for(self.__joined_channels['MCS'].out_queue.get(), timeout=cap_timeout)
+				except asyncio.TimeoutError:
+					raise Exception('Server did not send DEMANDACTIVEPDU within timeout. The server may have RDS licensing or Connection Broker issues.')
 			if err is not None:
 				raise err
 
@@ -855,6 +1008,10 @@ class RDPConnection:
 			caps.append(cap)
 
 			cap = TS_SOUND_CAPABILITYSET()
+			caps.append(cap)
+
+			cap = TS_MULTIFRAGMENTUPDATE_CAPABILITYSET()
+			cap.MaxRequestSize = self.iosettings.fastpath_max_request_size
 			caps.append(cap)
 
 			share_hdr = TS_SHARECONTROLHEADER()
@@ -1066,12 +1223,32 @@ class RDPConnection:
 									print('Decrypted data: %s' % data)
 									print('Original MAC  : %s' % sec_hdr.dataSignature)
 									print('Calculated MAC: %s' % mac)
-					await self.__channel_id_lookup[x[1]['channelId']].process_channel_data(data)
+					channel_id = x[1]['channelId']
+					channel = self.__channel_id_lookup[channel_id]
+					if channel_id == self.__joined_channels['MCS'].channel_id:
+						if (
+							len(data) >= 6
+							and int.from_bytes(data[:2], 'little') == len(data)
+							and (int.from_bytes(data[2:4], 'little') & 0x0F)
+							in [member.value for member in PDUTYPE]
+						):
+							data = normalize_share_data_pdu(
+								data,
+								self.bulk_decompressor,
+							)
+					else:
+						data = normalize_channel_pdu(
+							data,
+							self.bulk_decompressor,
+						)
+					await channel.process_channel_data(data)
 				else:
 					#print('fastpath data in -> %s' % len(response))
 					fpdu = TS_FP_UPDATE_PDU.from_bytes(response)
 					if FASTPATH_SEC.ENCRYPTED in fpdu.flags:
-						data = self.cryptolayer.client_dec(fpdu.fpOutputUpdates)
+						if self.cryptolayer is None:
+							raise Exception('Encrypted fast-path data received without a crypto layer')
+						data = self.cryptolayer.client_dec(fpdu.fpOutputData)
 						if FASTPATH_SEC.SECURE_CHECKSUM in fpdu.flags:
 							mac = self.cryptolayer.calc_salted_mac(data, is_server=True)
 						else:
@@ -1079,12 +1256,13 @@ class RDPConnection:
 						if mac != fpdu.dataSignature:
 							print('ERROR! Signature mismatch! Printing debug data')
 							print('FASTPATH_SEC  : %s' % fpdu)
-							print('Encrypted data: %s' % fpdu.fpOutputUpdates[:100])
+							print('Encrypted data: %s' % fpdu.fpOutputData[:100])
 							print('Decrypted data: %s' % data[:100])
 							print('Original MAC  : %s' % fpdu.dataSignature)
 							print('Calculated MAC: %s' % mac)
 							raise Exception('Signature mismatch')
-						fpdu.fpOutputUpdates = TS_FP_UPDATE.from_bytes(data)
+						fpdu.fpOutputData = data
+						fpdu.fpOutputUpdates = TS_FP_UPDATE.list_from_bytes(data)
 					await self.__process_fastpath(fpdu)
 		
 		except asyncio.CancelledError:
@@ -1104,25 +1282,40 @@ class RDPConnection:
 		# high bandwith traffic. If you disable fastpath (during connection sequence) you won't
 		# get images at all
 		
-		try:
-			if fpdu.fpOutputUpdates.fragmentation != FASTPATH_FRAGMENT.SINGLE:
-				print('WARNING! FRAGMENTATION IS NOT IMPLEMENTED! %s' % fpdu.fpOutputUpdates.fragmentation)
-			if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.BITMAP:
-				for bitmapdata in fpdu.fpOutputUpdates.update.rectangles:
-					self.desktop_buffer_has_data = True
-					res, image = RDP_VIDEO.from_bitmapdata(bitmapdata, self.iosettings.video_out_format)
-					self.__desktop_buffer.paste(image, [res.x, res.y, res.x+res.width, res.y+res.height])
-					await self.ext_out_queue.put(res)
-			#else:
-			#	#print(fpdu.fpOutputUpdates.updateCode)
-			#	#if fpdu.fpOutputUpdates.updateCode == FASTPATH_UPDATETYPE.CACHED:
-			#	#	print(fpdu.fpOutputUpdates)
-			#	#if fpdu.fpOutputUpdates.updateCode not in [FASTPATH_UPDATETYPE.CACHED, FASTPATH_UPDATETYPE.POINTER]:
-			#	#	print('notbitmap %s' % fpdu.fpOutputUpdates.updateCode.name)
-		except Exception as e:
-			# the decoder is not perfect yet, so it's better to keep this here...
-			logger.error(f"Error: {e}, {traceback.format_exc()}")
-			return
+		for raw_update in fpdu.fpOutputUpdates:
+			if raw_update.compression == FASTPATH_OUTPUT_COMPRESSION.USED:
+				if self.bulk_decompressor is None:
+					raise BulkCompressionError(
+						'Server sent compressed fast-path data without negotiation'
+					)
+				raw_update.updateData = self.bulk_decompressor.decompress(
+					raw_update.updateData,
+					raw_update.compressionFlags,
+				)
+				raw_update.size = len(raw_update.updateData)
+				raw_update.compression = FASTPATH_OUTPUT_COMPRESSION.NONE
+				raw_update.compressionFlags = 0
+			update = self.__fastpath_reassembler.feed(raw_update)
+			if update is None:
+				continue
+			try:
+				update.parse_update_data()
+				if update.updateCode == FASTPATH_UPDATETYPE.BITMAP:
+					for bitmapdata in update.update.rectangles:
+						self.desktop_buffer_has_data = True
+						res, image = RDP_VIDEO.from_bitmapdata(bitmapdata, self.iosettings.video_out_format)
+						self.__desktop_buffer.paste(image, [res.x, res.y, res.x+res.width, res.y+res.height])
+						await self.ext_out_queue.put(res)
+				#else:
+				#	#print(update.updateCode)
+				#	#if update.updateCode == FASTPATH_UPDATETYPE.CACHED:
+				#	#	print(update)
+				#	#if update.updateCode not in [FASTPATH_UPDATETYPE.CACHED, FASTPATH_UPDATETYPE.POINTER]:
+				#	#	print('notbitmap %s' % update.updateCode.name)
+			except Exception as e:
+				# the decoder is not perfect yet, so it's better to keep this here...
+				logger.error(f"Error: {e}, {traceback.format_exc()}")
+				continue
 	
 
 

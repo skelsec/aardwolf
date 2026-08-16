@@ -1,0 +1,124 @@
+schema_version: 1
+
+schema:
+  entry_required:
+    - id
+    - title
+    - status
+    - classification
+    - canonical_test
+    - affected_profiles
+    - evidence
+    - blocked_by
+    - blocks
+  id_pattern: "^KF-[0-9]{4}$"
+  status_values:
+    - confirmed
+    - planned
+    - resolved
+  classification_values:
+    - production_defect
+    - planned_feature
+    - environment
+  notes:
+    canonical_test: "One strict-xfail node ID reproducing the root issue."
+    affected_profiles: "List dialects, operating systems, roles, and capabilities."
+    evidence: "Sanitized expected/actual behavior and non-secret references."
+    blocked_by: "Known-failure IDs that prevent this case from running."
+    blocks: "Downstream known-failure IDs sharing this root blocker."
+
+# This example documents the shape only; it is not an active known failure.
+example_entry:
+  id: KF-0000
+  title: Example short defect title
+  status: confirmed
+  classification: production_defect
+  canonical_test: tests/unit/test_example.py::test_minimal_reproducer
+  affected_profiles:
+    dialects:
+      - RDP
+    operating_systems:
+      - example-only
+    roles:
+      - rdp_server
+    capabilities:
+      - example_capability
+  evidence:
+    observed_on: "YYYY-MM-DD"
+    expected: Sanitized expected behavior
+    actual: Sanitized observed behavior
+    references:
+      - example-only
+  blocked_by: []
+  blocks:
+    - KF-0001
+  notes: Do not copy credentials, hostnames, packet captures, or secrets here.
+
+known_failures:
+  - id: KF-0001
+    title: X.224 Data PDU cannot round-trip after parse
+    status: confirmed
+    classification: production_defect
+    canonical_test: tests/unit/protocol/x224/test_x224.py::test_x224_data_round_trip
+    affected_profiles:
+      dialects:
+        - RDP
+      operating_systems:
+        - any
+      roles:
+        - rdp_client
+      capabilities:
+        - protocol_probe
+    evidence:
+      observed_on: "2026-08-15"
+      expected: Data.from_bytes(wire).to_bytes() equals the original TPDU
+      actual: TPDU_NR is stored as int and to_bytes concatenates it as bytes
+      references:
+        - aardwolf/protocol/x224/data.py
+    blocked_by: []
+    blocks: []
+  - id: KF-0002
+    title: CredSSP packetizer ignores BER frames shorter than six bytes
+    status: confirmed
+    classification: production_defect
+    canonical_test: tests/unit/network/test_packetizers.py::test_credssp_packetizer_short_ber_under_preread
+    affected_profiles:
+      dialects:
+        - RDP
+      operating_systems:
+        - any
+      roles:
+        - rdp_client
+      capabilities:
+        - protocol_probe
+    evidence:
+      observed_on: "2026-08-15"
+      expected: A short-form BER token is emitted once its declared length is buffered
+      actual: process_buffer waits for a 6-byte preread before inspecting the length
+      references:
+        - aardwolf/network/tpkt.py
+    blocked_by: []
+    blocks: []
+  - id: KF-0003
+    title: Native 16-bpp RLE decoder rejects the in-tree compressed bitmap sample
+    status: confirmed
+    classification: production_defect
+    canonical_test: tests/unit/rle/test_bitmap_decompress.py::test_rectconvert_produces_rgba_image_from_compressed_blob
+    affected_profiles:
+      dialects:
+        - RDP
+      operating_systems:
+        - any
+      roles:
+        - rdp_client
+      capabilities:
+        - protocol_probe
+    evidence:
+      observed_on: "2026-08-15"
+      expected: rectconvert of the 417x8 16-bpp compressed sample yields an RGBA image
+      actual: bitmap_decompress raises Decompression Error 16
+      references:
+        - aardwolf/utils/rectconvert.py
+        - aardwolf/_rle
+    blocked_by: []
+    blocks: []

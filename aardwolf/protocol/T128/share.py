@@ -1,6 +1,11 @@
 import enum
 import io
 
+from aardwolf.protocol.compression import (
+	BulkCompressionFlags,
+	BulkCompressionError,
+)
+
 class PDUTYPE(enum.Enum):
 	DEMANDACTIVEPDU = 0x1 #Demand Active PDU (section 2.2.1.13.1).
 	CONFIRMACTIVEPDU = 0x3 # Confirm Active PDU (section 2.2.1.13.2).
@@ -138,3 +143,65 @@ class TS_SHAREDATAHEADER:
 				value = self.__dict__[k]
 			t += '%s: %s\r\n' % (k, value)
 		return t
+
+
+SHARE_CONTROL_HEADER_SIZE = 6
+SHARE_DATA_HEADER_SIZE = 18
+
+
+def normalize_share_data_pdu(data, decompressor):
+	"""Decompress one slow-path Data PDU and rebuild a raw-data header."""
+	data = bytes(data)
+	if len(data) < SHARE_CONTROL_HEADER_SIZE:
+		raise BulkCompressionError('Truncated Share Control Header')
+
+	share_control = TS_SHARECONTROLHEADER.from_bytes(data)
+	if share_control.totalLength < SHARE_CONTROL_HEADER_SIZE:
+		raise BulkCompressionError('Invalid Share Control PDU length')
+	if share_control.totalLength != len(data):
+		raise BulkCompressionError(
+			'Share Control PDU length does not match received data'
+		)
+	if share_control.pduType != PDUTYPE.DATAPDU:
+		return data
+	if len(data) < SHARE_DATA_HEADER_SIZE:
+		raise BulkCompressionError('Truncated Share Data Header')
+
+	share_data = TS_SHAREDATAHEADER.from_bytes(data)
+	compression_flags = int(share_data.compressedType)
+	has_compression_state = bool(
+		compression_flags
+		& int(
+			BulkCompressionFlags.TYPE_MASK
+			| BulkCompressionFlags.COMPRESSED
+			| BulkCompressionFlags.AT_FRONT
+			| BulkCompressionFlags.FLUSHED
+		)
+	)
+	if not has_compression_state:
+		return data
+	if decompressor is None:
+		raise BulkCompressionError(
+			'Server sent compressed slow-path data without negotiation'
+		)
+
+	payload = data[SHARE_DATA_HEADER_SIZE:]
+	expected_size = None
+	if share_data.uncompressedLength:
+		if share_data.uncompressedLength < 4:
+			raise BulkCompressionError(
+				'Invalid Share Data uncompressed length'
+			)
+		expected_size = share_data.uncompressedLength - 4
+	payload = decompressor.decompress(
+		payload,
+		compression_flags,
+		expected_size=expected_size,
+	)
+
+	share_control.totalLength = SHARE_DATA_HEADER_SIZE + len(payload)
+	share_data.shareControlHeader = share_control
+	share_data.uncompressedLength = len(payload) + 4
+	share_data.compressedType = CompType(0)
+	share_data.compressedLength = 0
+	return share_data.to_bytes() + payload

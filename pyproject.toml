@@ -1,3 +1,111 @@
 [build-system]
-requires = ["setuptools>=62.4", "setuptools-rust>=1.5.2"]
+requires = ["setuptools>=77", "setuptools-rust"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "aardwolf"
+dynamic = ["version"]
+description = "Asynchronous RDP protocol implementation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+	{name = "Tamas Jos", email = "info@skelsecprojects.com"},
+]
+dependencies = [
+	"unicrypto>=0.0.11",
+	"asyauth>=0.0.16",
+	"asysocks>=0.2.9",
+	"tqdm",
+	"colorama",
+	"asn1crypto",
+	"asn1tools",
+	"pyperclip>=1.8.2",
+	"arc4>=0.3.0",
+	"Pillow>=9.0.0",
+]
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
+	"Programming Language :: Python :: 3.14",
+	"Programming Language :: Rust",
+]
+
+[project.urls]
+Homepage = "https://github.com/skelsec/aardwolf"
+Repository = "https://github.com/skelsec/aardwolf"
+
+[project.scripts]
+ardpscan = "aardwolf.examples.scanners.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+py-modules = ["librlers"]
+
+[tool.setuptools.packages.find]
+include = ["aardwolf*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "aardwolf._version.__version__"}
+
+[[tool.setuptools-rust.ext-modules]]
+target = "aardwolf._rle"
+path = "rust/rle/Cargo.toml"
+binding = "PyO3"
+
+[[tool.setuptools-rust.ext-modules]]
+target = "aardwolf._bulk"
+path = "rust/bulk-compression/Cargo.toml"
+binding = "PyO3"
+
+[tool.pytest.ini_options]
+minversion = "7.4"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = [
+	"-ra",
+	"--strict-config",
+	"--strict-markers",
+	"--randomly-seed=20240814",
+]
+asyncio_mode = "strict"
+timeout = 30
+timeout_method = "thread"
+xfail_strict = true
+filterwarnings = [
+	"ignore:.*deprecated.*:DeprecationWarning:asn1tools.parser",
+]
+markers = [
+	"unit: deterministic, offline unit tests",
+	"fake_peer: async tests using a scripted in-process RDP or VNC peer",
+	"component: tests spanning multiple in-repository components",
+	"xrdp: tests requiring an explicitly configured xrdp target",
+	"vnc: tests requiring an explicitly configured VNC target",
+	"slow: tests excluded from the default fast suite",
+	"destructive: tests that can modify or delete remote state",
+	"privileged: tests requiring elevated or administrative credentials",
+	"quarantine: unsafe, flaky, or not-yet-classified tests",
+	"capability(name): tests requiring one or more named target capabilities",
+]
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+source = ["aardwolf"]
+omit = [
+	"aardwolf/develstuff/*",
+	"aardwolf/examples/*",
+	"aardwolf/keyboard/layouts/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+precision = 2
+exclude_lines = [
+	"pragma: no cover",
+	"if TYPE_CHECKING:",
+	"if __name__ == .__main__.:",
+]

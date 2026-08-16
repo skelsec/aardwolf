@@ -13,11 +13,26 @@ from aardwolf.protocol.x224.client.connectionrequest import ConnectionRequest, R
 from aardwolf.protocol.x224.server.connectionconfirm import ConnectionConfirm
 
 
+MSTSC_COOKIE_MAX_LENGTH = 9
+
+
+def _format_mstshash_cookie(identifier: typing.Optional[str]) -> typing.Optional[bytes]:
+	if not identifier:
+		return None
+	if '\r' in identifier or '\n' in identifier or '\x00' in identifier:
+		raise ValueError('RDP cookie identifier contains an invalid control character')
+
+	identifier_bytes = identifier.encode('utf-8')[:MSTSC_COOKIE_MAX_LENGTH]
+	if not identifier_bytes:
+		return None
+	return b'Cookie: mstshash=' + identifier_bytes + b'\r\n'
+
+
 class X224Network:
 	def __init__(self, connection:UniConnection):
 		self.connection = connection
 	
-	async def client_negotiate(self, flags:NEG_FLAGS = 0, supported_protocols:SUPP_PROTOCOLS = SUPP_PROTOCOLS.SSL|SUPP_PROTOCOLS.HYBRID_EX, to_raise = True):
+	async def client_negotiate(self, flags:NEG_FLAGS = 0, supported_protocols:SUPP_PROTOCOLS = SUPP_PROTOCOLS.SSL|SUPP_PROTOCOLS.HYBRID_EX, to_raise = True, cookie_identifier:typing.Optional[str] = None):
 		reply = None
 		try:
 			negreq = RDP_NEG_REQ()
@@ -26,7 +41,7 @@ class X224Network:
 			
 			conreq = ConnectionRequest()
 			conreq.SRC_REF = 0
-			conreq.cookie = b'Cookie: mstshash=devel\r\n'
+			conreq.cookie = _format_mstshash_cookie(cookie_identifier)
 			conreq.rdpNegReq = negreq
 
 			await self.connection.write(conreq.to_bytes())

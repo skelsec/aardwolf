@@ -1,0 +1,22 @@
+name: aardwolf-vnc-interop
+
+services:
+  vnc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEBIAN_SNAPSHOT: "20250811T000000Z"
+        TIGERVNC_PACKAGE_VERSION: "1.12.0+dfsg-8"
+    environment:
+      AARDWOLF_VNC_USERNAME: "${AARDWOLF_VNC_USERNAME:-aardwolftest}"
+      AARDWOLF_VNC_PASSWORD: "${AARDWOLF_VNC_PASSWORD:-Aardwolf-Test-Only-1!}"
+    ports:
+      - "${AARDWOLF_VNC_PORT:-15900}:5900"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "5900"]
+      interval: 2s
+      timeout: 2s
+      start_period: 10s
+      retries: 30
+    restart: "no"

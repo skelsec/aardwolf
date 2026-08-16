@@ -1,0 +1,15 @@
+[package]
+name = "aardwolf-bulk-compression"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tamas Jos"]
+description = "Specification-derived RDP bulk decompression for aardwolf"
+license = "MIT"
+
+[lib]
+name = "_bulk"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+pyo3 = { version = "0.27.2", features = ["abi3-py311", "extension-module"] }

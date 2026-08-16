@@ -69,6 +69,24 @@ class RDPConnectionFactory:
 		credential = UniCredential.from_url(connection_url)
 		return RDPConnectionFactory(iosettings, target, credential)
 
+	@staticmethod
+	def from_rdp_file(path, iosettings=None, credential:UniCredential = None):
+		from aardwolf.commons.rdpfile import RDPFile
+		return RDPConnectionFactory.from_rdp(RDPFile.from_file(path), iosettings=iosettings, credential=credential)
+
+	@staticmethod
+	def from_rdp(rdpfile, iosettings=None, credential:UniCredential = None):
+		settings = rdpfile.to_iosettings(iosettings)
+		target = rdpfile.to_target()
+		return RDPConnectionFactory(settings, target, credential)
+
+	def to_rdp_file(self):
+		from aardwolf.commons.rdpfile import RDPFile
+		credential = self.credential
+		username = getattr(credential, 'username', None) if credential is not None else None
+		domain = getattr(credential, 'domain', None) if credential is not None else None
+		return RDPFile.from_settings(self.target, self.iosettings, username=username, domain=domain)
+
 
 	def __str__(self):
 		t = '==== RDPConnectionFactory ====\r\n'

@@ -77,6 +77,7 @@ class FASTPATH_FRAGMENT(enum.Enum):
 	NEXT = 0x3 #The fast-path data in the updateData field contains the second or subsequent fragment in a sequence of fragments.
 
 class FASTPATH_OUTPUT_COMPRESSION(enum.IntFlag):
+	NONE = 0x0
 	USED = 0x2 #Indicates that the compressionFlags field is present. 
 
 class TS_FP_UPDATE:
@@ -84,9 +85,9 @@ class TS_FP_UPDATE:
 		# HDR start
 		self.updateCode: FASTPATH_UPDATETYPE = None
 		self.fragmentation: FASTPATH_FRAGMENT = None
-		self.compression: int = None
+		self.compression: FASTPATH_OUTPUT_COMPRESSION = FASTPATH_OUTPUT_COMPRESSION.NONE
 		# HDR end
-		self.compressionFlags:int = None
+		self.compressionFlags:int = 0
 		self.size:int = None
 		self.updateData:bytes = None
 
@@ -94,34 +95,83 @@ class TS_FP_UPDATE:
 		self.update = None
 
 	def to_bytes(self):
-		data = self.update.to_bytes()
-		t = (self.updateCode | self.fragmentation.value << 4 | self.compression << 6).to_bytes(1, byteorder='little', signed = False)
-		t += self.compressionFlags.to_bytes(1, byteorder='little', signed = False)
+		if self.updateData is not None:
+			data = self.updateData
+		elif self.update is not None:
+			data = self.update.to_bytes()
+		else:
+			data = b''
+		update_header = (
+			self.updateCode.value
+			| (self.fragmentation.value << 4)
+			| (self.compression.value << 6)
+		)
+		t = update_header.to_bytes(1, byteorder='little', signed = False)
+		if self.compression == FASTPATH_OUTPUT_COMPRESSION.USED:
+			t += self.compressionFlags.to_bytes(1, byteorder='little', signed = False)
 		t += len(data).to_bytes(2, byteorder='little', signed = False)
 		t += data
 		return t
 
 	@staticmethod
-	def from_bytes(bbuff: bytes):
-		return TS_FP_UPDATE.from_buffer(io.BytesIO(bbuff))
+	def from_bytes(bbuff: bytes, parse_update = True):
+		buff = io.BytesIO(bbuff)
+		msg = TS_FP_UPDATE.from_buffer(buff, parse_update=parse_update)
+		if buff.read(1) != b'':
+			raise ValueError('Trailing data after fast-path update')
+		return msg
 
 	@staticmethod
-	def from_buffer(buff: io.BytesIO):
+	def from_buffer(buff: io.BytesIO, parse_update = True):
 		msg = TS_FP_UPDATE()
-		updateHeader = int.from_bytes(buff.read(1), byteorder='little', signed = False)
+		update_header_raw = buff.read(1)
+		if len(update_header_raw) != 1:
+			raise ValueError('Truncated fast-path update header')
+		updateHeader = update_header_raw[0]
 		msg.updateCode = FASTPATH_UPDATETYPE(updateHeader & 0xF)
 		msg.fragmentation = FASTPATH_FRAGMENT((updateHeader >> 4) & 3)
-		msg.compression = FASTPATH_OUTPUT_COMPRESSION(updateHeader >> 6)
-		if FASTPATH_OUTPUT_COMPRESSION.USED in msg.compression:
-			print('Bulk compression not implemented!')
-			msg.compressionFlags = int.from_bytes(buff.read(1), byteorder='little', signed = False)
-		msg.size = int.from_bytes(buff.read(2), byteorder='little', signed = False)
+		compression_value = (updateHeader >> 6) & 3
+		if compression_value not in (
+			FASTPATH_OUTPUT_COMPRESSION.NONE.value,
+			FASTPATH_OUTPUT_COMPRESSION.USED.value,
+		):
+			raise ValueError('Invalid fast-path output compression value')
+		msg.compression = FASTPATH_OUTPUT_COMPRESSION(compression_value)
+		if msg.compression == FASTPATH_OUTPUT_COMPRESSION.USED:
+			compression_flags_raw = buff.read(1)
+			if len(compression_flags_raw) != 1:
+				raise ValueError('Truncated fast-path compression flags')
+			msg.compressionFlags = compression_flags_raw[0]
+		size_raw = buff.read(2)
+		if len(size_raw) != 2:
+			raise ValueError('Truncated fast-path update size')
+		msg.size = int.from_bytes(size_raw, byteorder='little', signed = False)
 		msg.updateData = buff.read(msg.size)
-		ot = otype2obj[msg.updateCode]
-		if ot is not None:
-			msg.update = ot.from_bytes(msg.updateData)
-		
+		if len(msg.updateData) != msg.size:
+			raise ValueError('Truncated fast-path update data')
+		if parse_update:
+			if msg.fragmentation != FASTPATH_FRAGMENT.SINGLE:
+				raise ValueError('Cannot decode a fragmented fast-path update before reassembly')
+			msg.parse_update_data()
 		return msg
+
+	@staticmethod
+	def list_from_bytes(bbuff: bytes):
+		buff = io.BytesIO(bbuff)
+		updates = []
+		while buff.tell() < len(bbuff):
+			updates.append(TS_FP_UPDATE.from_buffer(buff, parse_update=False))
+		return updates
+
+	def parse_update_data(self):
+		if self.fragmentation != FASTPATH_FRAGMENT.SINGLE:
+			raise ValueError('Cannot decode a fragmented fast-path update before reassembly')
+		if self.compression == FASTPATH_OUTPUT_COMPRESSION.USED:
+			raise NotImplementedError('Fast-path bulk compression is not implemented')
+		ot = otype2obj.get(self.updateCode)
+		if ot is not None:
+			self.update = ot.from_bytes(self.updateData)
+		return self.update
 
 	def __repr__(self):
 		t = '==== TS_FP_UPDATE ====\r\n'
@@ -161,6 +211,7 @@ class TS_FP_UPDATE_PDU:
 		self.length2:int = None
 		self.fipsInformation:TS_FP_FIPS_INFO = None #OPTIONAL!
 		self.dataSignature:bytes = None
+		self.fpOutputData:bytes = b''
 		self.fpOutputUpdates:List[TS_FP_UPDATE] = []
 
 	def to_bytes(self):
@@ -168,34 +219,53 @@ class TS_FP_UPDATE_PDU:
 
 	@staticmethod
 	def from_bytes(bbuff: bytes, with_fips = False):
-		return TS_FP_UPDATE_PDU.from_buffer(io.BytesIO(bbuff), with_fips)
+		buff = io.BytesIO(bbuff)
+		msg = TS_FP_UPDATE_PDU.from_buffer(buff, with_fips)
+		if buff.read(1) != b'':
+			raise ValueError('Trailing data after fast-path output PDU')
+		return msg
 
 	@staticmethod
 	def from_buffer(buff: io.BytesIO, with_fips = False):
 		msg = TS_FP_UPDATE_PDU()
-		t = buff.read(1)[0]
+		packet_start = buff.tell()
+		header_raw = buff.read(1)
+		if len(header_raw) != 1:
+			raise ValueError('Truncated fast-path output PDU header')
+		t = header_raw[0]
 		msg.action = FASTPATH_ACTION(t & 3)
 		msg.reserved = (t >> 2) & 15
 		msg.flags = FASTPATH_SEC(t >> 6)
 
-
-		msg.length1 = buff.read(1)[0]
+		length1_raw = buff.read(1)
+		if len(length1_raw) != 1:
+			raise ValueError('Truncated fast-path output PDU length')
+		msg.length1 = length1_raw[0]
 		length = msg.length1
 		if msg.length1 >> 7 == 1:
-			msg.length2 = buff.read(1)[0]
-			buff.seek(-2,1)
-			length = int.from_bytes(buff.read(2), byteorder='big', signed=False)
-			length = length & 0x7fff
+			length2_raw = buff.read(1)
+			if len(length2_raw) != 1:
+				raise ValueError('Truncated fast-path output PDU length')
+			msg.length2 = length2_raw[0]
+			length = ((msg.length1 & 0x7f) << 8) | msg.length2
+		if length < buff.tell() - packet_start:
+			raise ValueError('Invalid fast-path output PDU length')
 
 		if with_fips is True:
 			msg.fipsInformation = TS_FP_FIPS_INFO.from_buffer(buff)
 		if FASTPATH_SEC.ENCRYPTED in msg.flags or FASTPATH_SEC.SECURE_CHECKSUM in msg.flags:
 			msg.dataSignature = buff.read(8)
+			if len(msg.dataSignature) != 8:
+				raise ValueError('Truncated fast-path output PDU signature')
 		
-		if FASTPATH_SEC.ENCRYPTED in msg.flags:
-			msg.fpOutputUpdates = buff.read()
-		else:
-			msg.fpOutputUpdates = TS_FP_UPDATE.from_buffer(buff)
+		payload_length = length - (buff.tell() - packet_start)
+		if payload_length < 0:
+			raise ValueError('Invalid fast-path output PDU length')
+		msg.fpOutputData = buff.read(payload_length)
+		if len(msg.fpOutputData) != payload_length:
+			raise ValueError('Truncated fast-path output PDU data')
+		if FASTPATH_SEC.ENCRYPTED not in msg.flags:
+			msg.fpOutputUpdates = TS_FP_UPDATE.list_from_bytes(msg.fpOutputData)
 
 		return msg
 
