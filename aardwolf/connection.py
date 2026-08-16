@@ -61,6 +61,7 @@ from aardwolf.protocol.T128.fontlistpdu import TS_FONT_LIST_PDU
 from aardwolf.protocol.T128.inputeventpdu import TS_SHAREDATAHEADER, TS_INPUT_EVENT, TS_INPUT_PDU_DATA
 from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
 from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
+from aardwolf.protocol.T128.savesessioninfopdu import TS_SAVE_SESSION_INFO_PDU
 from aardwolf.protocol.T128.shutdownreqpdu import TS_SHUTDOWN_REQ_PDU
 from aardwolf.protocol.T128.share import PDUTYPE, STREAM_TYPE, PDUTYPE2
 
@@ -103,6 +104,7 @@ class RDPConnection:
 		# ext_in_queue: expects keyboard/mouse/clipboard data
 		self.ext_out_queue = asyncio.Queue()
 		self.ext_in_queue = asyncio.Queue()
+		self.logon_info_queue = asyncio.Queue()
 
 		self.__connection:UniConnection = None
 		self._x224net = None
@@ -208,6 +210,9 @@ class RDPConnection:
 			if self.ext_out_queue is not None:
 				# signaling termination via ext_out_queue
 				await self.ext_out_queue.put(None)			
+
+			if self.logon_info_queue is not None:
+				await self.logon_info_queue.put(None)
 			
 			if self.__external_reader_task is not None:
 				self.__external_reader_task.cancel()
@@ -1094,6 +1099,7 @@ class RDPConnection:
 						continue
 					
 					data = x[1]['userData']
+					share_pdu_offset = 0
 					if data is not None:
 						if self.cryptolayer is not None:
 							sec_hdr = TS_SECURITY_HEADER1.from_bytes(data)
@@ -1110,9 +1116,14 @@ class RDPConnection:
 									print('Decrypted data: %s' % data)
 									print('Original MAC  : %s' % sec_hdr.dataSignature)
 									print('Calculated MAC: %s' % mac)
-					if data is not None:
-						self.check_logon_status(data)
-					await self.__channel_id_lookup[x[1]['channelId']].process_channel_data(data)
+							else:
+								share_pdu_offset = 4
+					if await self.__process_save_session_info(
+						x[1]['channelId'], data, share_pdu_offset
+					) is False:
+						if data is not None:
+							self.check_logon_status(data)
+						await self.__channel_id_lookup[x[1]['channelId']].process_channel_data(data)
 				else:
 					#print('fastpath data in -> %s' % len(response))
 					fpdu = TS_FP_UPDATE_PDU.from_bytes(response)
@@ -1140,6 +1151,19 @@ class RDPConnection:
 			return None, e
 		finally:
 			await self.terminate()
+
+	async def __process_save_session_info(self, channel_id, data, share_pdu_offset=0):
+		if data is None or channel_id != self.__joined_channels['MCS'].channel_id:
+			return False
+
+		try:
+			pdu = TS_SAVE_SESSION_INFO_PDU.from_bytes(data[share_pdu_offset:])
+		except (ValueError, KeyError):
+			return False
+
+		self.logon_info_received.set()
+		await self.logon_info_queue.put(pdu)
+		return True
 
 	async def __process_fastpath(self, fpdu):
 		# Fastpath was introduced to the RDP specs to speed up data transmission
