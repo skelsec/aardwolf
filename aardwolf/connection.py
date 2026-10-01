@@ -503,6 +503,8 @@ class RDPConnection:
 			
 			for _ in range(10):
 				token = await self.__connection.read_one()
+				if token is None:
+					raise Exception('Connection closed during CredSSP authentication!')
 				data, to_continue, err = await self.authapi.authenticate(token, flags = None, certificate = certificate, spn=self.target.to_target_string())
 				if err is not None:
 					raise err
@@ -517,6 +519,8 @@ class RDPConnection:
 					if SUPP_PROTOCOLS.HYBRID_EX in self.x224_protocol:
 						self.__connection.change_packetizer(Packetizer())
 						authresult_raw = await self.__connection.read_one()
+						if authresult_raw is None:
+							raise Exception('Connection closed during CredSSP early user authorization!')
 						logger.debug('Early User Authorization Result PDU raw: %s' % authresult_raw.hex())
 						self.authz_result = int.from_bytes(authresult_raw[:4], byteorder='little', signed=False) # 4-byte result, rest belongs to the next PDU
 						if self.authz_result == AUTHZ_ACCESS_DENIED:
