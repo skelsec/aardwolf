@@ -1,22 +1,35 @@
+PYTHON ?= python3
+
+test:
+	./run-tests.sh baseline
+
+test-unit:
+	./run-tests.sh unit
+
+test-lab:
+	./run-tests.sh lab
+
+test-full:
+	./run-tests.sh full
+
 clean:
 	rm -f -r build/
 	rm -f -r dist/
 	rm -f -r *.egg-info
-	rm -f -r aardwolf/utils/rlers/target/
+	rm -f -r rust/target/
 	find . -name '*.pyc' -exec rm -f {} +
 	find . -name '*.pyo' -exec rm -f {} +
 	find . -name '*~' -exec rm -f  {} +
 
 publish: clean package
-	python3 -m twine upload dist/*
+	$(PYTHON) -m twine check dist/*
+	$(PYTHON) -m twine upload dist/*
 
 package: clean
-	python3 setup.py sdist
-#	sudo docker pull quay.io/pypa/manylinux2014_x86_64
-#	sudo docker run --rm -v `pwd`:/io quay.io/pypa/manylinux2014_x86_64 /io/builder/manylinux/build.sh
+	$(PYTHON) -m build --config-setting=--build-option=--py-limited-api=cp311
 
 rebuild: clean
-	python3 setup.py install
+	$(PYTHON) -m pip install --force-reinstall .
 
 build:
-	python3 setup.py install
+	$(PYTHON) -m pip install --editable .

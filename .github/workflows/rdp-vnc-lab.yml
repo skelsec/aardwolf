@@ -1,0 +1,136 @@
+name: Interop - pinned xrdp and TigerVNC labs
+
+on:
+  schedule:
+    - cron: "17 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pinned-rdp-vnc-lab
+  cancel-in-progress: false
+
+jobs:
+  xrdp:
+    name: Disposable xrdp interoperability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up current Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install -r requirements-test.txt
+
+      - name: Confirm container runtime
+        run: docker compose version
+
+      - name: Run pinned disposable xrdp lab
+        env:
+          PYTHONHASHSEED: "0"
+        run: |
+          mkdir -p reports test-results/xrdp
+          tests/interop/xrdp/run-lab.sh \
+            --junitxml=test-results/xrdp/junit.xml \
+            --cov=aardwolf \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/xrdp-coverage.xml
+
+      - name: Build sanitized test report
+        if: always()
+        run: |
+          python tests/support/reporting.py \
+            --junit test-results/xrdp/junit.xml \
+            --registry tests/known_failures.yml \
+            --json-output reports/xrdp-summary.json \
+            --markdown-output reports/xrdp-summary.md
+          cat reports/xrdp-summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload sanitized xrdp artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-xrdp-report
+          path: |
+            reports/xrdp-coverage.xml
+            reports/xrdp-summary.json
+            reports/xrdp-summary.md
+            test-results/xrdp/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  vnc:
+    name: Disposable TigerVNC interoperability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up current Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install -r requirements-test.txt
+
+      - name: Confirm container runtime
+        run: docker compose version
+
+      - name: Run pinned disposable VNC lab
+        env:
+          PYTHONHASHSEED: "0"
+        run: |
+          mkdir -p reports test-results/vnc
+          tests/interop/vnc/run-lab.sh \
+            --junitxml=test-results/vnc/junit.xml \
+            --cov=aardwolf \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/vnc-coverage.xml
+
+      - name: Build sanitized test report
+        if: always()
+        run: |
+          python tests/support/reporting.py \
+            --junit test-results/vnc/junit.xml \
+            --registry tests/known_failures.yml \
+            --json-output reports/vnc-summary.json \
+            --markdown-output reports/vnc-summary.md
+          cat reports/vnc-summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload sanitized VNC artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-vnc-report
+          path: |
+            reports/vnc-coverage.xml
+            reports/vnc-summary.json
+            reports/vnc-summary.md
+            test-results/vnc/junit.xml
+          if-no-files-found: warn
+          retention-days: 14

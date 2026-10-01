@@ -1,4 +1,4 @@
-import librlers
+from aardwolf import _rle as librlers
 from PIL import Image
 
 bpp_2_bytes = {

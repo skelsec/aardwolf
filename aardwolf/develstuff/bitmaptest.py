@@ -1,5 +1,5 @@
 from aardwolf.protocol.fastpath import TS_FP_UPDATE_PDU
-import rle
+from aardwolf import _rle as rle
 from PyQt5.Qt import QWidget, QHBoxLayout, QLabel, QApplication                                                                      
 from PyQt5 import QtGui                                                                                                          
 import sys   
@@ -64,7 +64,8 @@ reqdata = bytes.fromhex('00b59e01983501000400c0018000ff01bf004000400010000104130
 x = TS_FP_UPDATE_PDU.from_bytes(reqdata, False)
 #print(x)
 print()
-for a in x.fpOutputUpdates.update.rectangles:
+x.fpOutputUpdates[0].parse_update_data()
+for a in x.fpOutputUpdates[0].update.rectangles:
 	print(a)
 	print()
 	input()

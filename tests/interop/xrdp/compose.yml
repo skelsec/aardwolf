@@ -1,0 +1,23 @@
+name: aardwolf-xrdp-interop
+
+services:
+  xrdp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEBIAN_SNAPSHOT: "20250811T000000Z"
+        XRDP_PACKAGE_VERSION: "0.9.21.1-1"
+        XORGXRDP_PACKAGE_VERSION: "0.9.19-1"
+    environment:
+      AARDWOLF_XRDP_USERNAME: "${AARDWOLF_XRDP_USERNAME:-aardwolftest}"
+      AARDWOLF_XRDP_PASSWORD: "${AARDWOLF_XRDP_PASSWORD:-Aardwolf-Test-Only-1!}"
+    ports:
+      - "${AARDWOLF_XRDP_PORT:-13389}:3389"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "3389"]
+      interval: 2s
+      timeout: 2s
+      start_period: 15s
+      retries: 30
+    restart: "no"

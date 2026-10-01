@@ -129,6 +129,9 @@ class RDPECLIPChannel(Channel):
 				if hdr.msgType in (CB_TYPE.CB_CLIP_CAPS, CB_TYPE.CB_MONITOR_READY):
 					logger.debug('Clipboard channel reinit from RUNNING state (reconnect)')
 					self.current_server_formats = {}
+					self.server_caps = None
+					self.server_general_caps = None
+					self.negotiated_general_caps_flags = CB_GENERAL_FLAGS(0)
 					self.status = CLIPBRDSTATUS.WAITING_SERVER_INIT
 					return await self.__process_in(hdr, payload)
 				elif hdr.msgType == CB_TYPE.CB_FORMAT_LIST:
@@ -177,6 +180,7 @@ class RDPECLIPChannel(Channel):
 				# we expect either CLIPRDR_CAPS or CLIPRDR_MONITOR_READY
 				if hdr.msgType == CB_TYPE.CB_CLIP_CAPS:
 					self.server_caps = CLIPRDR_CAPS.from_bytes(payload[:hdr.dataLen])
+					self.server_general_caps = None
 					if self.server_caps.capabilitySets:
 						self.server_general_caps = self.server_caps.capabilitySets[0]
 					logger.debug(f'Received server capabilities: {self.server_general_caps}')

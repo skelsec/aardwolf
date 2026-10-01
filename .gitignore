@@ -155,3 +155,10 @@ cython_debug/
 
 *.whl
 *.exe
+
+# Local interoperability profiles and generated test reports
+profile.local.yml
+**/profiles.local/
+reports/
+test-results/
+.venv-test/

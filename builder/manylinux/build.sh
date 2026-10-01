@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e -x
 
-PYBINS=("/opt/python/cp38-cp38/bin" "/opt/python/cp39-cp39/bin" "/opt/python/cp310-cp310/bin" "/opt/python/cp311-cp311/bin" "/opt/python/cp312-cp312/bin")
+PYBINS=("/opt/python/cp311-cp311/bin" "/opt/python/cp312-cp312/bin" "/opt/python/cp313-cp313/bin" "/opt/python/cp314-cp314/bin")
 RUST_CHANNEL=stable
 
 ls -la /opt/python/
@@ -14,7 +14,7 @@ function install_rust {
 function clean_project {
     # Remove compiled files that might cause conflicts
     pushd /io/
-    rm -rf .cache .eggs rust_fst/_ffi.py build *.egg-info
+    rm -rf .cache build *.egg-info rust/target
     find ./ -name "__pycache__" -type d -print0 |xargs -0 rm -rf
     find ./ -name "*.pyc" -type f -print0 |xargs -0 rm -rf
     find ./ -name "*.so" -type f -print0 |xargs -0 rm -rf

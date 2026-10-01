@@ -9,12 +9,12 @@ class Data:
 		self.length = None #here it's always 2
 		self.DT:TPDU_TYPE = TPDU_TYPE.DATA
 		self.ROA:bool = False #indicates we want ACK for this packet
-		self.TPDU_NR = b'\x80'
+		self.TPDU_NR:int = 0x80
 		self.data = None #remaining data which is not indicated by the length field (most of the data)
 		
 	def to_bytes(self):
 		t = (self.DT.value << 4 | (int(self.ROA) & 0b0001)).to_bytes(1, byteorder='big', signed = False)
-		t += self.TPDU_NR
+		t += self.TPDU_NR.to_bytes(1, byteorder='big', signed=False)
 		t = b'\x02' + t + self.data
 		return t
 

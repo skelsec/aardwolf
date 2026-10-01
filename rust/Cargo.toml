@@ -1,0 +1,3 @@
+[workspace]
+members = ["bulk-compression", "rle"]
+resolver = "2"

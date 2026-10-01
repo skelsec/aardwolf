@@ -21,10 +21,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          default: true
+        uses: dtolnay/rust-toolchain@stable
       
       - name: Install additional libs on Linux
         if: runner.os == 'Linux'
@@ -36,10 +33,11 @@ jobs:
         env:
           CIBW_BEFORE_ALL_LINUX: "curl --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
           CIBW_ENVIRONMENT: 'PATH="$PATH:$HOME/.cargo/bin"'
-          # Build only for the interpreters the Rust extension supports (>=3.11),
-          # which cibuildwheel infers from python_requires in setup.py.
-          # Skip 32-bit Windows, musllinux, and free-threaded (cp3??t) builds.
-          CIBW_SKIP: "*-win32 *-musllinux_* cp3??t-*"
+          # One CPython 3.11 ABI3 wheel per platform supports all newer
+          # CPython versions covered by the package metadata.
+          CIBW_BUILD: "cp311-*"
+          CIBW_SKIP: "*-win32 *-musllinux_*"
+          CIBW_CONFIG_SETTINGS: "--build-option=--py-limited-api=cp311"
         #    ...
         with:
           package-dir: .

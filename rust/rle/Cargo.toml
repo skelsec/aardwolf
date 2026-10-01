@@ -1,0 +1,15 @@
+[package]
+name = "aardwolf-rle"
+version = "0.0.1"
+edition = "2021"
+authors = ["Sylvain Peyrefitte <citronneur@gmail.com>", "Tamas Jos"]
+description = "Native bitmap RLE decoding for aardwolf"
+license = "MIT"
+
+[lib]
+name = "_rle"
+crate-type = ["cdylib"]
+path = "rle.rs"
+
+[dependencies]
+pyo3 = { version = "0.27.2", features = ["abi3-py311", "extension-module"] }

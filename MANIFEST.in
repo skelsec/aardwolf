@@ -1,15 +1,4 @@
 include LICENSE
 include README.md
-graft aardwolf/commons
-graft aardwolf/develstuff
-graft aardwolf/examples
-graft aardwolf/extensions
-graft aardwolf/keyboard
-graft aardwolf/network
-graft aardwolf/protocol
-graft aardwolf/transport
-graft aardwolf/protocol/T124
-graft aardwolf/protocol/T125
-graft aardwolf/utils/rlers/src
-include aardwolf/utils/rlers/Cargo.toml
-include aardwolf/utils/rlers/pyproject.toml
+include librlers.py
+graft rust

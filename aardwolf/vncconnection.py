@@ -37,7 +37,7 @@ try:
 except ImportError:
 	logger.debug('No Qt installed! Converting to qt will not work')
 
-import librlers
+from aardwolf import _rle as librlers
 
 # https://datatracker.ietf.org/doc/html/rfc6143
 

@@ -1,6 +1,11 @@
 import io
 import enum
 
+from aardwolf.protocol.compression import (
+	BulkCompressionError,
+	BulkCompressionFlags,
+)
+
 class CHANNEL_FLAG(enum.IntFlag):
 	CHANNEL_FLAG_FIRST = 0x00000001 #Indicates that the chunk is the first in a sequence.
 	CHANNEL_FLAG_LAST = 0x00000002 #Indicates that the chunk is the last in a sequence.
@@ -27,6 +32,8 @@ class CHANNEL_PDU_HEADER:
 
 	@staticmethod
 	def from_bytes(bbuff: bytes):
+		if len(bbuff) < 8:
+			raise ValueError('Truncated virtual-channel PDU header')
 		return CHANNEL_PDU_HEADER.from_buffer(io.BytesIO(bbuff))
 
 	@staticmethod
@@ -58,3 +65,30 @@ class CHANNEL_PDU_HEADER:
 				value = self.__dict__[k]
 			t += '%s: %s\r\n' % (k, value)
 		return t
+
+
+CHANNEL_COMPRESSION_MASK = 0x00EF0000
+
+
+def normalize_channel_pdu(data, decompressor):
+	"""Decompress one virtual-channel chunk while preserving its fragments."""
+	channel_pdu = CHANNEL_PDU_HEADER.from_bytes(data)
+	raw_flags = int(channel_pdu.flags)
+	if not raw_flags & CHANNEL_COMPRESSION_MASK:
+		return bytes(data)
+	if decompressor is None:
+		raise BulkCompressionError(
+			'Server sent compressed virtual-channel data without negotiation'
+		)
+
+	compression_flags = (
+		(raw_flags & CHANNEL_COMPRESSION_MASK) >> 16
+	)
+	channel_pdu.data = decompressor.decompress(
+		channel_pdu.data,
+		compression_flags,
+	)
+	channel_pdu.flags = CHANNEL_FLAG(
+		raw_flags & ~CHANNEL_COMPRESSION_MASK
+	)
+	return channel_pdu.to_bytes()
