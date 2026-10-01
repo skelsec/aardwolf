@@ -216,8 +216,10 @@ class Rdp61Decoder:
 		level2_flags = data[1]
 		self._validate_level1_flags(level1_flags)
 
+		# Despite the MS-RDPEGDI decompression table, L1_PACKET_AT_FRONT only
+		# rewinds the offset: Windows servers keep matching against the old
+		# history contents beyond it (as does FreeRDP's xcrush decoder).
 		if level1_flags & L1_PACKET_AT_FRONT:
-			working_history = bytearray(self.HISTORY_SIZE)
 			start_offset = 0
 		elif flags & BulkCompressionFlags.AT_FRONT:
 			raise BulkCompressionError(

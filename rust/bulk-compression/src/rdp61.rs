@@ -306,8 +306,10 @@ impl Rdp61Decoder {
             self.level2.clone()
         };
 
+        // Despite the MS-RDPEGDI decompression table, L1_PACKET_AT_FRONT only
+        // rewinds the offset: Windows servers keep matching against the old
+        // history contents beyond it (as does FreeRDP's xcrush decoder).
         if level1_flags & L1_PACKET_AT_FRONT != 0 {
-            working_history.fill(0);
             start_offset = 0;
         } else if flags & AT_FRONT != 0 {
             return Err(error(
@@ -539,6 +541,39 @@ mod tests {
                 .unwrap(),
             b"xyxy"
         );
+    }
+
+    #[test]
+    fn packet_at_front_keeps_history_beyond_the_rewound_offset() {
+        let mut decoder = Rdp61Decoder::new(None).unwrap();
+        decoder
+            .decompress(b"\x02\x000123456789", RDP61 | COMPRESSED, None)
+            .unwrap();
+
+        let packet = [
+            L1_COMPRESSED | L1_PACKET_AT_FRONT,
+            0,
+            1,
+            0,
+            5,
+            0,
+            2,
+            0,
+            5,
+            0,
+            0,
+            0,
+            b'a',
+            b'b',
+        ];
+        assert_eq!(
+            decoder
+                .decompress(&packet, RDP61 | COMPRESSED, None)
+                .unwrap(),
+            b"ab56789"
+        );
+        assert_eq!(decoder.history_offset(), 7);
+        assert_eq!(&decoder.history[..10], b"ab56789789");
     }
 
     #[test]

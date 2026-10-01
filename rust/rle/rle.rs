@@ -33,7 +33,7 @@ use std::io::Error as IoError;
 use std::io::{Cursor, Read};
 use std::string::String;
 
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyByteArray;
 use pyo3::types::PyModule;
@@ -133,6 +133,19 @@ pub enum Error {
 impl From<IoError> for Error {
     fn from(e: IoError) -> Self {
         Error::Io(e)
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::RdpError(e) => write!(f, "{:?}: {}", e.kind, e.message),
+            Error::Io(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                write!(f, "input truncated (unexpected end of data)")
+            }
+            Error::Io(e) => write!(f, "io error: {}", e),
+            Error::TryError(e) => write!(f, "{}", e),
+        }
     }
 }
 
@@ -340,11 +353,37 @@ macro_rules! repeat {
 pub fn rle_16_decompress(
     input: &[u8],
     width: usize,
-    mut height: usize,
+    height: usize,
     output: &mut [u16],
 ) -> RdpResult<()> {
     let mut input_cursor = Cursor::new(input);
+    let mut rows_left = height;
+    rle_16_decompress_inner(
+        &mut input_cursor,
+        input.len(),
+        width,
+        &mut rows_left,
+        output,
+    )
+    .map_err(|e| {
+        Error::TryError(format!(
+            "{} at input offset {}/{} with {} of {} rows left",
+            e,
+            input_cursor.position(),
+            input.len(),
+            rows_left,
+            height
+        ))
+    })
+}
 
+fn rle_16_decompress_inner(
+    input_cursor: &mut Cursor<&[u8]>,
+    input_len: usize,
+    width: usize,
+    height: &mut usize,
+    output: &mut [u16],
+) -> RdpResult<()> {
     let mut code: u8;
     let mut opcode: u8;
     let mut lastopcode: u8 = 0xFF;
@@ -363,7 +402,7 @@ pub fn rle_16_decompress(
     let mut mixmask: u8;
     let mut bicolour = false;
 
-    while (input_cursor.position() as usize) < input.len() {
+    while (input_cursor.position() as usize) < input_len {
         fom_mask = 0;
         code = input_cursor.read_u8()?;
         opcode = code >> 4;
@@ -439,16 +478,16 @@ pub fn rle_16_decompress(
 
         while count > 0 {
             if x >= width {
-                if height <= 0 {
+                if *height == 0 {
                     return Err(Error::RdpError(RdpError::new(
                         RdpErrorKind::InvalidData,
-                        "error during decompress",
+                        "decoded more pixels than width*height",
                     )));
                 }
                 x = 0;
-                height -= 1;
+                *height -= 1;
                 prevline = line;
-                line = Some(height * width);
+                line = Some(*height * width);
             }
 
             match opcode {
@@ -563,7 +602,12 @@ pub fn rle_16_decompress(
                 0xe => {
                     repeat!(output[line.unwrap() + x] = 0, count, x, width);
                 }
-                _ => panic!("opcode"),
+                _ => {
+                    return Err(Error::RdpError(RdpError::new(
+                        RdpErrorKind::InvalidData,
+                        &format!("unknown opcode {:#x} (code byte {:#04x})", opcode, code),
+                    )))
+                }
             }
         }
     }
@@ -758,8 +802,14 @@ fn bitmap_decompress_wrapper(
         return Ok(if is_compressed != 0 {
             let mut result = vec![0 as u8; width * height * 4];
             match rle_32_decompress(data, width as u32, height as u32, &mut result) {
-                Err(_) => {
-                    return Err(PyTypeError::new_err("Decompression Error 32"));
+                Err(e) => {
+                    return Err(PyValueError::new_err(format!(
+                        "Decompression Error 32 ({}x{}, {} input bytes): {}",
+                        width,
+                        height,
+                        data.len(),
+                        e
+                    )));
                 }
                 Ok(_) => PyByteArray::new(py, &result).into(),
             }
@@ -772,8 +822,14 @@ fn bitmap_decompress_wrapper(
         if is_compressed != 0 {
             let mut result = vec![0 as u16; width * height * 2];
             match rle_16_decompress(data, width, height, &mut result) {
-                Err(_) => {
-                    return Err(PyTypeError::new_err("Decompression Error 16"));
+                Err(e) => {
+                    return Err(PyValueError::new_err(format!(
+                        "Decompression Error 16 ({}x{}, {} input bytes): {}",
+                        width,
+                        height,
+                        data.len(),
+                        e
+                    )));
                 }
                 Ok(()) => {
                     let output_buffer = rgb565torgb32(&result, width, height);
