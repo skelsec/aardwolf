@@ -849,6 +849,9 @@ class RDPConnection:
 					info.UserName = self.credentials.username
 				if self.credentials.secret is not None:
 					info.Password = self.credentials.secret
+				if info.Password != '':
+					# without AUTOLOGON the server ignores the password and prompts the user instead
+					info.flags |= INFO_FLAG.AUTOLOGON
 			info.AlternateShell = '' 
 			info.WorkingDir = ''
 			info.extrainfo = extinfo
