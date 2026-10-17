@@ -5,11 +5,11 @@ import copy
 import struct
 import typing
 import asyncio
+import threading
 import traceback
 from typing import cast
 from collections import OrderedDict
 
-import asn1tools
 from PIL import Image
 from aardwolf import logger
 from aardwolf.keyboard import VK_MODIFIERS
@@ -108,6 +108,28 @@ from asysocks.unicomm.common.packetizers import Packetizer
 # Early User Authorization Result PDU authorizationResult (MS-RDPBCGR 2.2.10.2)
 AUTHZ_SUCCESS = 0x00000000
 AUTHZ_ACCESS_DENIED = 0x00000005
+
+_asn1_codecs = None
+_asn1_codecs_lock = threading.Lock()
+
+def get_asn1_codecs():
+	"""Returns the T.125 MCS (BER, PER) and T.124 GCC (PER) codecs used during the connection sequence.
+	Parsing the ASN.1 specifications takes most of a second, so this is done once per process.
+	The compiled codecs keep no state between encode/decode calls, so all connections share them.
+	"""
+	global _asn1_codecs
+	with _asn1_codecs_lock:
+		if _asn1_codecs is None:
+			# imported here so connections that stop before this point don't pay for it
+			import asn1tools
+			mcs = asn1tools.parse_string(MCSPDU_ver_2)
+			# compile_dict may modify the parsed dict (automatic tagging), so each codec gets its own
+			_asn1_codecs = (
+				asn1tools.compile_dict(copy.deepcopy(mcs), 'ber'),
+				asn1tools.compile_dict(mcs, 'per'),
+				asn1tools.compile_string(GCCPDU, 'per'),
+			)
+		return _asn1_codecs
 
 class RDPConnection:
 	def __init__(self, target:RDPTarget, credentials:UniCredential, iosettings:RDPIOSettings):
@@ -403,10 +425,8 @@ class RDPConnection:
 				)
 
 			# initializing the parsers here otherwise they'd waste time on connections that did not get to this point
-			# not kidding, this takes ages
-			self.__t125_ber_codec = asn1tools.compile_string(MCSPDU_ver_2, 'ber')
-			self._t125_per_codec = asn1tools.compile_string(MCSPDU_ver_2, 'per')
-			self.__t124_codec = asn1tools.compile_string(GCCPDU, 'per')
+			# not kidding, this takes ages (only the first connection of the process builds them)
+			self.__t125_ber_codec, self._t125_per_codec, self.__t124_codec = get_asn1_codecs()
 
 			# All steps below are required as stated in the following 'documentation'
 			# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/1d263f84-6153-4a16-b329-8770be364e1b
