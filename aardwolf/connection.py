@@ -5,6 +5,7 @@ import copy
 import struct
 import typing
 import asyncio
+import functools
 import traceback
 from typing import cast
 from collections import OrderedDict
@@ -104,6 +105,16 @@ from aardwolf.network.tpkt import TPKTPacketizer
 
 from aardwolf.network.tpkt import CredSSPPacketizer
 from asysocks.unicomm.common.packetizers import Packetizer
+
+@functools.lru_cache(maxsize=None)
+def _get_asn1_codecs():
+	# Parsing the specs is the expensive part, so it happens once per process
+	mcs_spec = asn1tools.parse_string(MCSPDU_ver_2)
+	return (
+		asn1tools.compile_dict(mcs_spec, 'ber'),
+		asn1tools.compile_dict(mcs_spec, 'per'),
+		asn1tools.compile_string(GCCPDU, 'per'),
+	)
 
 # Early User Authorization Result PDU authorizationResult (MS-RDPBCGR 2.2.10.2)
 AUTHZ_SUCCESS = 0x00000000
@@ -403,10 +414,8 @@ class RDPConnection:
 				)
 
 			# initializing the parsers here otherwise they'd waste time on connections that did not get to this point
-			# not kidding, this takes ages
-			self.__t125_ber_codec = asn1tools.compile_string(MCSPDU_ver_2, 'ber')
-			self._t125_per_codec = asn1tools.compile_string(MCSPDU_ver_2, 'per')
-			self.__t124_codec = asn1tools.compile_string(GCCPDU, 'per')
+			# not kidding, the first compile takes ages
+			self.__t125_ber_codec, self._t125_per_codec, self.__t124_codec = _get_asn1_codecs()
 
 			# All steps below are required as stated in the following 'documentation'
 			# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/1d263f84-6153-4a16-b329-8770be364e1b
