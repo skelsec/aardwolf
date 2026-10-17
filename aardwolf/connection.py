@@ -5,7 +5,6 @@ import copy
 import struct
 import typing
 import asyncio
-import threading
 import traceback
 from typing import cast
 from collections import OrderedDict
@@ -110,26 +109,24 @@ AUTHZ_SUCCESS = 0x00000000
 AUTHZ_ACCESS_DENIED = 0x00000005
 
 _asn1_codecs = None
-_asn1_codecs_lock = threading.Lock()
 
 def get_asn1_codecs():
 	"""Returns the T.125 MCS (BER, PER) and T.124 GCC (PER) codecs used during the connection sequence.
-	Parsing the ASN.1 specifications takes most of a second, so this is done once per process.
-	The compiled codecs keep no state between encode/decode calls, so all connections share them.
+	Parsing the ASN.1 specifications takes most of a second, so they are built on the first connection and shared by the next ones.
+	The compiled codecs keep no state between encode/decode calls. connect() calls this synchronously, so coroutines cannot interleave here.
 	"""
 	global _asn1_codecs
-	with _asn1_codecs_lock:
-		if _asn1_codecs is None:
-			# imported here so connections that stop before this point don't pay for it
-			import asn1tools
-			mcs = asn1tools.parse_string(MCSPDU_ver_2)
-			# compile_dict may modify the parsed dict (automatic tagging), so each codec gets its own
-			_asn1_codecs = (
-				asn1tools.compile_dict(copy.deepcopy(mcs), 'ber'),
-				asn1tools.compile_dict(mcs, 'per'),
-				asn1tools.compile_string(GCCPDU, 'per'),
-			)
-		return _asn1_codecs
+	if _asn1_codecs is None:
+		# imported here so connections that stop before this point don't pay for it
+		import asn1tools
+		mcs = asn1tools.parse_string(MCSPDU_ver_2)
+		# compile_dict may modify the parsed dict (automatic tagging), so each codec gets its own
+		_asn1_codecs = (
+			asn1tools.compile_dict(copy.deepcopy(mcs), 'ber'),
+			asn1tools.compile_dict(mcs, 'per'),
+			asn1tools.compile_string(GCCPDU, 'per'),
+		)
+	return _asn1_codecs
 
 class RDPConnection:
 	def __init__(self, target:RDPTarget, credentials:UniCredential, iosettings:RDPIOSettings):
