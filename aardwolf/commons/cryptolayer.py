@@ -202,23 +202,23 @@ class RDPCryptoLayer:
 		else:
 			ctx = RC4(TempKey64)
 			PreSaltKey = ctx.encrypt(TempKey64)
-			NewEncryptKey40 = 0xD1269E + self.Last40Bits(PreSaltKey)
-			NewEncryptKey56 = 0xD1 + self.Last56Bits(PreSaltKey)
+			NewEncryptKey40 = b'\xD1\x26\x9E' + self.Last40Bits(PreSaltKey)
+			NewEncryptKey56 = b'\xD1' + self.Last56Bits(PreSaltKey)
 
 			if self.keysize == 56:
 				if is_server is True:
-					self.CurrentClientDecryptKey56 = ctx.encrypt(NewEncryptKey56)
+					self.CurrentClientDecryptKey56 = NewEncryptKey56
 					self.client_crypto_dec = RC4(self.CurrentClientDecryptKey56)
 				else:
-					self.CurrentClientEncryptKey56 = ctx.encrypt(NewEncryptKey56)
+					self.CurrentClientEncryptKey56 = NewEncryptKey56
 					self.client_crypto_enc = RC4(self.CurrentClientEncryptKey56)
 			
 			if self.keysize == 40:
 				if is_server is True:
-					self.CurrentClientDecryptKey40 = ctx.encrypt(NewEncryptKey40)
+					self.CurrentClientDecryptKey40 = NewEncryptKey40
 					self.client_crypto_dec = RC4(self.CurrentClientDecryptKey40)
 				else:
-					self.CurrentClientEncryptKey40 = ctx.encrypt(NewEncryptKey40)
+					self.CurrentClientEncryptKey40 = NewEncryptKey40
 					self.client_crypto_enc = RC4(self.CurrentClientEncryptKey40)
 
 

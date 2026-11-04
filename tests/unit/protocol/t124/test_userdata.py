@@ -52,6 +52,17 @@ def test_client_security_round_trip():
     assert parsed.to_bytes() == security.to_bytes()
 
 
+def test_client_security_offers_combined_methods():
+    security = TS_UD_CS_SEC()
+    security.encryptionMethods = ENCRYPTION_FLAG.BIT_40 | ENCRYPTION_FLAG.BIT_56 | ENCRYPTION_FLAG.BIT_128
+    security.extEncryptionMethods = ENCRYPTION_FLAG.FRENCH
+    wire = security.to_bytes()
+    assert wire[4:8] == (0x01 | 0x08 | 0x02).to_bytes(4, "little")
+    parsed = TS_UD_CS_SEC.from_bytes(wire)
+    assert parsed.encryptionMethods == security.encryptionMethods
+    assert parsed.to_bytes() == wire
+
+
 def test_client_network_channel_array_round_trip():
     channel = CHANNEL_DEF()
     channel.name = "cliprdr"

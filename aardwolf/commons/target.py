@@ -15,6 +15,7 @@ from urllib.parse import urlparse, parse_qs
 
 from asysocks.unicomm.common.target import UniTarget, UniProto
 from asysocks.unicomm.common.proxy import UniProxyProto, UniProxyTarget
+from asysocks.unicomm.utils.paramprocessor import bool_one
 
 class RDPConnectionDialect(enum.Enum):
 	RDP = 'RDP'
@@ -40,10 +41,18 @@ class RDPTarget(UniTarget):
 			protocol:UniProto = UniProto.CLIENT_TCP, 
 			unsafe_ssl:bool = False,
 			dialect:RDPConnectionDialect = RDPConnectionDialect.RDP,
-			dns:str = None):
+			dns:str = None,
+			autologon:bool = True,
+			autologon_confirm:bool = True):
 		UniTarget.__init__(self, ip, port, protocol, timeout, hostname = hostname, proxies = proxies, domain = domain, dc_ip = dc_ip, dns=dns)
 		self.dialect = dialect
 		self.unsafe_ssl = unsafe_ssl
+		# sign in with the password sent in the Client Info PDU (TLS-only and Standard RDP Security).
+		# When disabled the server only pre-fills the username on its sign-in screen.
+		self.autologon = autologon
+		# after an autologon, wait for the server to confirm the sign-in and fail connect() otherwise.
+		# Disable for servers that never send logon notifications (xrdp with Xorg/VNC sessions).
+		self.autologon_confirm = autologon_confirm
 		if self.dialect == RDPConnectionDialect.VNC and self.port is None:
 			self.port = 5900
 
@@ -62,7 +71,9 @@ class RDPTarget(UniTarget):
 			protocol = self.protocol,
 			unsafe_ssl = self.unsafe_ssl,
 			dialect = self.dialect,
-			dns=self.dns
+			dns=self.dns,
+			autologon = self.autologon,
+			autologon_confirm = self.autologon_confirm,
 		)
 		return t
 
@@ -87,7 +98,7 @@ class RDPTarget(UniTarget):
 		else:
 			raise Exception('Port must be provided!')
 		
-		unitarget, extraparams = UniTarget.from_url(connection_url, protocol, port)
+		unitarget, extraparams = UniTarget.from_url(connection_url, protocol, port, {'autologon' : bool_one, 'autologon_confirm' : bool_one})
 
 		target = RDPTarget(
 			ip = unitarget.ip,
@@ -101,6 +112,10 @@ class RDPTarget(UniTarget):
 			dns = unitarget.dns,
 			dialect = dialect,
 		)
+		if extraparams['autologon'] is not None:
+			target.autologon = extraparams['autologon']
+		if extraparams['autologon_confirm'] is not None:
+			target.autologon_confirm = extraparams['autologon_confirm']
 		
 		return target
 		

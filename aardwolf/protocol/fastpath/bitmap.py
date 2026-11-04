@@ -98,8 +98,9 @@ class TS_BITMAP_DATA:
 		msg.bitmapLength = int.from_bytes(buff.read(2), byteorder='little', signed=False)
 		rl = msg.bitmapLength
 		if TS_BITMAP_FLAG.NO_BITMAP_COMPRESSION_HDR not in msg.flags and TS_BITMAP_FLAG.BITMAP_COMPRESSION in msg.flags:
+			# bitmapLength covers both bitmapComprHdr and bitmapDataStream
 			msg.bitmapComprHdr = TS_CD_HEADER.from_buffer(buff)
-			#rl -= 8
+			rl -= 8
 		msg.bitmapDataStream = buff.read(rl)
 		return msg
 

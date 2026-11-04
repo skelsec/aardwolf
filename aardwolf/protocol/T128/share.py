@@ -185,19 +185,10 @@ def normalize_share_data_pdu(data, decompressor):
 			'Server sent compressed slow-path data without negotiation'
 		)
 
+	# uncompressedLength is not validated: servers disagree on what it counts
+	# (Windows: payload + 4, xrdp: payload + 14), and FreeRDP ignores it as well.
 	payload = data[SHARE_DATA_HEADER_SIZE:]
-	expected_size = None
-	if share_data.uncompressedLength:
-		if share_data.uncompressedLength < 4:
-			raise BulkCompressionError(
-				'Invalid Share Data uncompressed length'
-			)
-		expected_size = share_data.uncompressedLength - 4
-	payload = decompressor.decompress(
-		payload,
-		compression_flags,
-		expected_size=expected_size,
-	)
+	payload = decompressor.decompress(payload, compression_flags)
 
 	share_control.totalLength = SHARE_DATA_HEADER_SIZE + len(payload)
 	share_data.shareControlHeader = share_control

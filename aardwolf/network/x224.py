@@ -46,6 +46,8 @@ class X224Network:
 
 			await self.connection.write(conreq.to_bytes())
 			reply = await self.read()
+			if reply is None:
+				raise ConnectionError('RDP server closed the connection before X.224 negotiation completed')
 			if reply.CR != TPDU_TYPE.CONNECTION_CONFIRM:
 				raise Exception('Server sent back unknown TPDU type! %s' % reply.CR)
 			reply = typing.cast(ConnectionConfirm, reply)

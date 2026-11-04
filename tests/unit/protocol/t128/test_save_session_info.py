@@ -54,6 +54,8 @@ async def test_connection_dispatches_save_session_info_with_security_header():
     }
     connection.logon_info_received = asyncio.Event()
     connection.logon_info_queue = asyncio.Queue()
+    connection.logon_notifications = []
+    connection._RDPConnection__logon_evt = asyncio.Event()
     wire = make_save_session_info(
         LOGON_MSG_TYPE.SESSION_BUSY_OPTIONS,
         2,
@@ -82,6 +84,8 @@ async def test_connection_ignores_save_session_info_on_virtual_channel():
     }
     connection.logon_info_received = asyncio.Event()
     connection.logon_info_queue = asyncio.Queue()
+    connection.logon_notifications = []
+    connection._RDPConnection__logon_evt = asyncio.Event()
 
     processed = await connection._RDPConnection__process_save_session_info(
         1004,

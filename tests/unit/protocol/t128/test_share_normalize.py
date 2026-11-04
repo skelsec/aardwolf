@@ -86,3 +86,27 @@ def test_normalize_compressed_share_data_with_mppc():
     parsed = TS_SHAREDATAHEADER.from_bytes(normalized)
     assert int(parsed.compressedType) == 0
     assert normalized[18:] == b"abc"
+
+
+@pytest.mark.parametrize("declared_overhead", [4, 14])
+def test_normalize_compressed_share_data_ignores_uncompressed_length_convention(declared_overhead):
+    decompressor = BulkDecompressor(BulkCompressionType.RDP4_8K)
+    payload = make_mppc_vector(literals=b"abc")
+    flags = CompType(
+        int(
+            compression_flags(
+                BulkCompressionType.RDP4_8K,
+                BulkCompressionFlags.COMPRESSED,
+                BulkCompressionFlags.AT_FRONT,
+                BulkCompressionFlags.FLUSHED,
+            )
+        )
+    )
+    wire = make_share_data_pdu(
+        payload,
+        compressed_type=flags,
+        uncompressed_length=len(b"abc") + declared_overhead,
+    )
+    normalized = normalize_share_data_pdu(wire, decompressor)
+    assert normalized[18:] == b"abc"
+    assert TS_SHAREDATAHEADER.from_bytes(normalized).uncompressedLength == len(b"abc") + 4

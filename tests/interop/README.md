@@ -12,7 +12,7 @@ Both labs pin:
   `sha256:b1a741487078b369e78119849663d7f1a5341ef2768798f7b7406c4240f86aef`
 - APT snapshot `20250811T000000Z`
 
-xrdp is pinned to Debian `0.9.21.1-1` with `xorgxrdp` `0.9.19-1`. TigerVNC is
+xrdp is pinned to Debian `0.9.21.1-1` with `xorgxrdp` `1:0.9.19-1`. TigerVNC is
 pinned to `tigervnc-standalone-server` `1.12.0+dfsg-8`. Compose maps the
 services to host ports `13389` and `15900`.
 

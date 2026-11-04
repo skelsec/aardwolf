@@ -64,7 +64,7 @@ class ORIENTATION(enum.Enum):
 	LANDSCAPE_FLIPPED = 180 #The desktop is rotated clockwise by 180 degrees.
 	PORTRAIT_FLIPPED = 270 #The desktop is rotated clockwise by 270 degrees.
 
-class ENCRYPTION_FLAG(enum.Enum):
+class ENCRYPTION_FLAG(enum.IntFlag):
 	FRENCH = 0x00000000
 	BIT_40 = 0x00000001 #40-bit session keys MUST be used to encrypt data (with RC4) and generate Message Authentication Codes (MAC).
 	BIT_128 = 0x00000002 #128-bit session keys MUST be used to encrypt data (with RC4) and generate MACs.

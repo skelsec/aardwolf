@@ -8,7 +8,7 @@ services:
       args:
         DEBIAN_SNAPSHOT: "20250811T000000Z"
         XRDP_PACKAGE_VERSION: "0.9.21.1-1"
-        XORGXRDP_PACKAGE_VERSION: "0.9.19-1"
+        XORGXRDP_PACKAGE_VERSION: "1:0.9.19-1"
     environment:
       AARDWOLF_XRDP_USERNAME: "${AARDWOLF_XRDP_USERNAME:-aardwolftest}"
       AARDWOLF_XRDP_PASSWORD: "${AARDWOLF_XRDP_PASSWORD:-Aardwolf-Test-Only-1!}"

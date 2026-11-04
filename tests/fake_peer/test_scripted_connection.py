@@ -7,8 +7,20 @@ from unittest.mock import AsyncMock
 import pytest
 
 from aardwolf.commons.iosettings import RDPIOSettings
-from aardwolf.connection import RDPConnection
+from aardwolf.connection import RDPConnection, _get_asn1_codecs
+from aardwolf.network.x224 import X224Network
+from aardwolf.protocol.T124.userdata.constants import TS_UD_TYPE
+from aardwolf.protocol.T128.controlpdu import TS_CONTROL_PDU
 from aardwolf.protocol.T128.inputeventpdu import TS_INPUT_PDU_DATA
+from aardwolf.protocol.T128.share import (
+    PDUTYPE,
+    PDUTYPE2,
+    STREAM_TYPE,
+    CompType,
+    TS_SHARECONTROLHEADER,
+    TS_SHAREDATAHEADER,
+)
+from aardwolf.protocol.T128.synchronizepdu import TS_SYNCHRONIZE_PDU
 from aardwolf.protocol.pdu.input.keyboard import KBDFLAGS
 from aardwolf.protocol.x224.client.connectionrequest import ConnectionRequest, RDP_NEG_REQ
 from aardwolf.protocol.x224.constants import NEG_FLAGS, SUPP_PROTOCOLS, TPDU_TYPE
@@ -174,6 +186,238 @@ async def test_terminate_sets_disconnected_and_queue_sentinel():
     assert connection.disconnected_evt.is_set()
     sentinel = await asyncio.wait_for(connection.ext_out_queue.get(), timeout=DEFAULT_TIMEOUT)
     assert sentinel is None
+
+
+class ClosedBeforeConfirmConnection:
+    async def write(self, data):
+        pass
+
+    async def read_one(self):
+        return None
+
+
+async def test_x224_negotiate_reports_connection_closed():
+    x224net = X224Network(ClosedBeforeConfirmConnection())
+    reply, error = await asyncio.wait_for(
+        x224net.client_negotiate(),
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert reply is None
+    assert isinstance(error, ConnectionError)
+
+
+class ErroredReadConnection:
+    """Mimics asysocks UniConnection.read(), which yields a bare None on transport errors."""
+
+    def __init__(self):
+        self.packetizer = SimpleNamespace(packetizer_control=lambda cmd: None)
+
+    async def read(self):
+        yield None
+
+
+async def test_x224_reader_reports_connection_closed_on_bare_none():
+    connection = make_bare_rdp_connection()
+    connection._RDPConnection__connection = ErroredReadConnection()
+    connection.terminate = AsyncMock()
+    result, error = await asyncio.wait_for(
+        connection._RDPConnection__x224_reader(),
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert result is None
+    assert isinstance(error, ConnectionError)
+    connection.terminate.assert_awaited_once()
+
+
+def make_security_exchange_connection(encryption_method):
+    connection = make_bare_rdp_connection()
+    connection._RDPConnection__server_connect_pdu = {
+        TS_UD_TYPE.SC_SECURITY: SimpleNamespace(
+            encryptionMethod=encryption_method,
+            serverRandom=b"\x22" * 32,
+            serverCertificate=SimpleNamespace(encrypt=lambda data: b"encrypted-client-random"),
+        )
+    }
+    connection.handle_out_data = AsyncMock()
+    return connection
+
+
+@pytest.mark.parametrize("encryption_method, keysize", [(0x01, 40), (0x08, 56), (0x02, 128)])
+async def test_security_exchange_uses_server_selected_key_size(encryption_method, keysize):
+    connection = make_security_exchange_connection(encryption_method)
+    result, error = await asyncio.wait_for(
+        connection._RDPConnection__security_exchange(),
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert error is None
+    assert result is True
+    assert connection.cryptolayer.keysize == keysize
+    connection.handle_out_data.assert_awaited_once()
+
+
+@pytest.mark.parametrize("encryption_method", [0x00, 0x10])
+async def test_security_exchange_rejects_unsupported_method(encryption_method):
+    connection = make_security_exchange_connection(encryption_method)
+    result, error = await asyncio.wait_for(
+        connection._RDPConnection__security_exchange(),
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert result is None
+    assert "unsupported" in str(error)
+    connection.handle_out_data.assert_not_awaited()
+
+
+def mcs_per_codec():
+    return _get_asn1_codecs()[1]
+
+
+class RecordingX224:
+    def __init__(self, replies=()):
+        self.writes = []
+        self._replies = list(replies)
+
+    async def write(self, data):
+        self.writes.append(bytes(data))
+
+    async def read(self):
+        return self._replies.pop(0)
+
+
+async def test_erect_domain_request_matches_ms_rdpbcgr_example():
+    connection = make_bare_rdp_connection()
+    connection._t125_per_codec = mcs_per_codec()
+    connection._x224net = RecordingX224()
+
+    result, error = await connection._RDPConnection__erect_domain()
+
+    assert error is None
+    # MS-RDPBCGR 4.1.5: choice 0x04, subHeight (len 1, 0), subInterval (len 1, 0)
+    assert connection._x224net.writes == [bytes.fromhex("0401000100")]
+
+
+async def test_join_channels_joins_user_channel_first():
+    codec = mcs_per_codec()
+    initiator = 1
+    channel_ids = [initiator + 1001, 1003]
+    replies = [
+        SimpleNamespace(data=codec.encode("DomainMCSPDU", ("channelJoinConfirm", {
+            "result": "rt-successful", "initiator": initiator, "requested": channel_id, "channelId": channel_id,
+        })))
+        for channel_id in channel_ids
+    ]
+    connection = make_bare_rdp_connection()
+    connection._initiator = initiator
+    connection._t125_per_codec = codec
+    connection._x224net = RecordingX224(replies)
+    connection._RDPConnection__joined_channels["MCS"].run = AsyncMock()
+    connection._RDPConnection__x224_reader = AsyncMock(return_value=(None, None))
+
+    result, error = await asyncio.wait_for(
+        connection._RDPConnection__join_channels(),
+        timeout=DEFAULT_TIMEOUT,
+    )
+    await asyncio.sleep(0)
+
+    assert error is None
+    assert result is True
+    requests = [codec.decode("DomainMCSPDU", data) for data in connection._x224net.writes]
+    assert [name for name, _ in requests] == ["channelJoinRequest", "channelJoinRequest"]
+    assert [body["channelId"] for _, body in requests] == channel_ids
+    assert all(body["initiator"] == initiator for _, body in requests)
+
+
+async def test_share_data_pdu_total_length_matches_wire_length():
+    codec = mcs_per_codec()
+    connection = make_bare_rdp_connection()
+    connection._initiator = 1
+    connection._t125_per_codec = codec
+    connection._x224net = RecordingX224()
+
+    data_hdr = TS_SHAREDATAHEADER()
+    data_hdr.shareID = 0x103EA
+    data_hdr.streamID = STREAM_TYPE.MED
+    data_hdr.pduType2 = PDUTYPE2.SYNCHRONIZE
+    sync = TS_SYNCHRONIZE_PDU()
+    sync.targetUser = 1003
+    await asyncio.wait_for(
+        connection.handle_out_data(sync, None, data_hdr, None, 1003, False),
+        timeout=DEFAULT_TIMEOUT,
+    )
+
+    _, body = codec.decode("DomainMCSPDU", connection._x224net.writes[0])
+    user_data = body["userData"]
+    assert len(user_data) == 22
+    assert TS_SHARECONTROLHEADER.from_bytes(user_data).totalLength == len(user_data)
+    assert TS_SHAREDATAHEADER.from_bytes(user_data).uncompressedLength == len(user_data)
+
+
+def make_server_synchronize():
+    sync = TS_SYNCHRONIZE_PDU()
+    sync.targetUser = 1002
+    body = sync.to_bytes()
+    header = TS_SHAREDATAHEADER()
+    header.shareControlHeader = TS_SHARECONTROLHEADER()
+    header.shareControlHeader.totalLength = 18 + len(body)
+    header.shareControlHeader.pduType = PDUTYPE.DATAPDU
+    header.shareControlHeader.pduVersion = 1
+    header.shareControlHeader.pduSource = 1002
+    header.shareID = 0x103EA
+    header.streamID = STREAM_TYPE.MED
+    header.uncompressedLength = 18 + len(body)
+    header.pduType2 = PDUTYPE2.SYNCHRONIZE
+    header.compressedType = CompType(0)
+    header.compressedLength = 0
+    return header.to_bytes() + body
+
+
+async def test_capability_exchange_sends_finalization_before_server_synchronize(monkeypatch):
+    connection = make_bare_rdp_connection()
+    mcs = connection._RDPConnection__joined_channels["MCS"]
+    mcs.out_queue = asyncio.Queue()
+    connection.iosettings = RDPIOSettings()
+    connection.target = SimpleNamespace(timeout=5)
+    connection._RDPConnection__server_connect_pdu = {TS_UD_TYPE.SC_SECURITY: SimpleNamespace(encryptionLevel=0)}
+
+    demand_active = TS_SHARECONTROLHEADER()
+    demand_active.totalLength = 6
+    demand_active.pduType = PDUTYPE.DEMANDACTIVEPDU
+    demand_active.pduVersion = 1
+    demand_active.pduSource = 1002
+    connection._RDPConnection__pending_mcs_data = (demand_active.to_bytes(), None)
+    monkeypatch.setattr(
+        "aardwolf.connection.TS_DEMAND_ACTIVE_PDU.from_bytes",
+        lambda data: SimpleNamespace(capabilitySets=[]),
+    )
+
+    sent = []
+
+    async def record(dataobj, sec_hdr, datacontrol_hdr, sharecontrol_hdr, channel_id, is_fastpath):
+        if sharecontrol_hdr is not None:
+            sent.append(sharecontrol_hdr.pduType.name)
+        else:
+            name = datacontrol_hdr.pduType2.name
+            if isinstance(dataobj, TS_CONTROL_PDU):
+                name += ":" + dataobj.action.name
+            sent.append(name)
+        if datacontrol_hdr is not None and datacontrol_hdr.pduType2 == PDUTYPE2.FONTLIST:
+            await mcs.out_queue.put((make_server_synchronize(), None))
+
+    connection.handle_out_data = record
+    result, error = await asyncio.wait_for(
+        connection._RDPConnection__handle_mandatory_capability_exchange(),
+        timeout=DEFAULT_TIMEOUT,
+    )
+
+    assert error is None
+    assert result is True
+    assert sent == [
+        "CONFIRMACTIVEPDU",
+        "SYNCHRONIZE",
+        "CONTROL:COOPERATE",
+        "CONTROL:REQUEST_CONTROL",
+        "FONTLIST",
+    ]
+    assert mcs.out_queue.empty()
 
 
 class FakeStream:

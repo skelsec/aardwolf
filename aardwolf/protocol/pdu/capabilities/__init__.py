@@ -3,6 +3,7 @@ import enum
 from os import stat
 
 from aardwolf import logger
+from aardwolf.protocol.enums import UnknownValueEnum
 from aardwolf.protocol.pdu.capabilities.bitmamachachehostsupp import TS_BITMAPCACHE_HOSTSUPPORT_CAPABILITYSET
 from aardwolf.protocol.pdu.capabilities.bitmap import TS_BITMAP_CAPABILITYSET
 from aardwolf.protocol.pdu.capabilities.bitmapcache import TS_BITMAPCACHE_CAPABILITYSET
@@ -33,12 +34,13 @@ from aardwolf.protocol.pdu.capabilities.windowactivation import TS_WINDOWACTIVAT
 from aardwolf.protocol.pdu.capabilities.windowlist import TS_WINDOW_LIST_CAP_SET
 
 
-class CAPSTYPE(enum.Enum):
+class CAPSTYPE(UnknownValueEnum):
 	GENERAL = 0x0001 #General Capability Set (section 2.2.7.1.1)
 	BITMAP = 0x0002 #Bitmap Capability Set (section 2.2.7.1.2)
 	ORDER = 0x0003 #Order Capability Set (section 2.2.7.1.3)
 	BITMAPCACHE = 0x0004 #Revision 1 Bitmap Cache Capability Set (section 2.2.7.1.4.1)
 	CONTROL = 0x0005 #Control Capability Set (section 2.2.7.2.2)
+	BITMAPCACHE_V3_CODECID = 0x0006 #Bitmap Cache V3 Codec ID; not in MS-RDPBCGR, sent by xrdp and FreeRDP (1-byte codec id)
 	ACTIVATION = 0x0007 #Window Activation Capability Set (section 2.2.7.2.3)
 	POINTER = 0x0008 #Pointer Capability Set (section 2.2.7.1.5)
 	SHARE = 0x0009 #Share Capability Set (section 2.2.7.2.4)
@@ -80,7 +82,7 @@ class TS_CAPS_SET:
 		return t
 
 	def to_bytes(self):
-		cd = self.capability.to_bytes()
+		cd = self.capability.to_bytes() if self.capability is not None else self.capabilityData
 		t = self.capabilitySetType.value.to_bytes(2, byteorder='little', signed = False)
 		t += (len(cd)+4).to_bytes(2, byteorder='little', signed = False)
 		t += cd
@@ -97,7 +99,7 @@ class TS_CAPS_SET:
 		msg.lengthCapability = int.from_bytes(buff.read(2), byteorder='little', signed = False)
 		msg.capabilityData = buff.read(msg.lengthCapability-4)
 		
-		ot = otype2obj[msg.capabilitySetType]
+		ot = otype2obj.get(msg.capabilitySetType)
 		if ot is not None:
 			msg.capability = ot.from_bytes(msg.capabilityData)
 			#if msg.capabilityData != msg.capability.to_bytes():
@@ -124,6 +126,7 @@ otype2obj = {
 	CAPSTYPE.ORDER : TS_ORDER_CAPABILITYSET,
 	CAPSTYPE.BITMAPCACHE : TS_BITMAPCACHE_CAPABILITYSET,
 	CAPSTYPE.CONTROL : TS_CONTROL_CAPABILITYSET,
+	CAPSTYPE.BITMAPCACHE_V3_CODECID : None,
 	CAPSTYPE.ACTIVATION : TS_WINDOWACTIVATION_CAPABILITYSET,
 	CAPSTYPE.POINTER : TS_POINTER_CAPABILITYSET,
 	CAPSTYPE.SHARE : TS_SHARE_CAPABILITYSET,

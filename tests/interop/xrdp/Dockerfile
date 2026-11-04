@@ -2,7 +2,7 @@ FROM debian:12.11-slim@sha256:b1a741487078b369e78119849663d7f1a5341ef2768798f7b7
 
 ARG DEBIAN_SNAPSHOT=20250811T000000Z
 ARG XRDP_PACKAGE_VERSION=0.9.21.1-1
-ARG XORGXRDP_PACKAGE_VERSION=0.9.19-1
+ARG XORGXRDP_PACKAGE_VERSION=1:0.9.19-1
 
 LABEL org.opencontainers.image.title="aardwolf xrdp interoperability lab" \
       org.opencontainers.image.description="Disposable, test-only xrdp target" \
@@ -21,6 +21,7 @@ RUN printf '%s\n' \
       xserver-xorg-core \
       xserver-xorg-input-libinput \
       openbox \
+      dbus \
       dbus-x11 \
       xauth \
       procps \

@@ -63,7 +63,7 @@ from aardwolf.protocol.T128.fontlistpdu import TS_FONT_LIST_PDU
 from aardwolf.protocol.T128.inputeventpdu import TS_SHAREDATAHEADER, TS_INPUT_EVENT, TS_INPUT_PDU_DATA
 from aardwolf.protocol.T125.securityexchangepdu import TS_SECURITY_PACKET
 from aardwolf.protocol.T128.seterrorinfopdu import TS_SET_ERROR_INFO_PDU
-from aardwolf.protocol.T128.savesessioninfopdu import TS_SAVE_SESSION_INFO_PDU
+from aardwolf.protocol.T128.savesessioninfopdu import TS_SAVE_SESSION_INFO_PDU, INFO_TYPE, LOGON_MSG_TYPE
 from aardwolf.protocol.T128.shutdownreqpdu import TS_SHUTDOWN_REQ_PDU
 from aardwolf.protocol.T128.share import (
 	PDUTYPE,
@@ -120,7 +120,25 @@ def _get_asn1_codecs():
 AUTHZ_SUCCESS = 0x00000000
 AUTHZ_ACCESS_DENIED = 0x00000005
 
+# Server Security Data encryptionMethod (MS-RDPBCGR 2.2.1.4.3) -> RC4 key size
+ENCRYPTION_METHOD_KEYSIZE = {
+	ENCRYPTION_FLAG.BIT_40.value: 40,
+	ENCRYPTION_FLAG.BIT_56.value: 56,
+	ENCRYPTION_FLAG.BIT_128.value: 128,
+}
+
+class AutologonError(Exception):
+	"""The server did not sign in with the credentials sent in the Client Info PDU.
+	notification is the Save Session Info PDU that reported the failure, if any."""
+	def __init__(self, message, notification = None):
+		super().__init__(message)
+		self.notification = notification
+
 class RDPConnection:
+	# Windows keeps a failed autologon on its sign-in screen without notifying the client,
+	# so a missing logon notification within this many seconds is treated as a failure.
+	autologon_timeout = 15
+
 	def __init__(self, target:RDPTarget, credentials:UniCredential, iosettings:RDPIOSettings):
 		"""RDP client connection object. After successful connection the two asynchronous queues named `ext_out_queue` and `ext_in_queue`
 		can be used to communicate with the remote server
@@ -155,6 +173,9 @@ class RDPConnection:
 		self.authz_result = None # Early User Authorization Result PDU, None if the server never sent one
 		self.logon_info_received = asyncio.Event() # set on the Save Session Info PDU (interactive logon completed)
 		self.logon_error = None # errorInfo of a non-zero Set Error Info PDU
+		self.logon_notifications = [] # parsed Save Session Info PDUs, in arrival order
+		self.__logon_evt = asyncio.Event() # set whenever one of the logon fields above changes
+		self.__autologon_sent = False
 
 		self.__server_connect_pdu:TS_SC = None # serverconnectpdu message from server (holds security exchange data)
 		
@@ -465,6 +486,9 @@ class RDPConnection:
 			self.__external_reader_task = asyncio.create_task(self.__external_reader())
 			logger.debug('RDP connection sequence done')
 			self.__desktop_buffer = Image.new(mode="RGBA", size=(self.iosettings.video_width, self.iosettings.video_height))
+			if self.__autologon_sent and self.target.autologon_confirm:
+				await self.__wait_for_autologon()
+				logger.debug('Autologon OK')
 			return True, None
 		except asyncio.CancelledError:
 			cleanup_task = asyncio.create_task(self.__cleanup_failed_connect())
@@ -480,6 +504,53 @@ class RDPConnection:
 			self.disconnected_evt.set()
 			return None, e
 	
+	async def __wait_for_autologon(self):
+		"""Waits until the server reports the outcome of the autologon, raises AutologonError on failure."""
+		loop = asyncio.get_running_loop()
+		deadline = loop.time() + self.autologon_timeout
+		checked = 0
+		while True:
+			for notification in self.logon_notifications[checked:]:
+				checked += 1
+				if notification.info_type != INFO_TYPE.LOGON_EXTENDED_INFO:
+					return # Logon Info: the user is signed in
+				errors = notification.logon_errors
+				if errors is None:
+					return # extended info without errors (auto-reconnect cookie) is only sent to signed in sessions
+				if errors.notification_type == LOGON_MSG_TYPE.SESSION_CONTINUE:
+					continue
+				if notification.is_session_contention:
+					return # credentials accepted, the server asks which session to use
+				raise AutologonError(
+					'Autologon failed: server sent logon error %s (data: 0x%x)' % (
+						getattr(errors.notification_type, 'name', hex(errors.notification_type_raw)),
+						errors.notification_data,
+					),
+					notification,
+				)
+			if checked == 0 and self.logon_info_received.is_set():
+				return # Save Session Info that could not be parsed
+			if self.logon_error is not None:
+				raise AutologonError('Autologon failed: server sent error info %s' % getattr(self.logon_error, 'name', self.logon_error))
+			if self.disconnected_evt.is_set():
+				raise AutologonError('Autologon failed: connection closed before the server confirmed the logon')
+			remaining = deadline - loop.time()
+			if remaining <= 0:
+				raise AutologonError(
+					'Autologon failed: no logon confirmation within %s seconds (wrong password, '
+					'or the server stopped at its sign-in screen for another reason)' % self.autologon_timeout
+				)
+			self.__logon_evt.clear()
+			waiters = [
+				asyncio.create_task(self.__logon_evt.wait()),
+				asyncio.create_task(self.disconnected_evt.wait()),
+			]
+			try:
+				await asyncio.wait(waiters, timeout = remaining, return_when = asyncio.FIRST_COMPLETED)
+			finally:
+				for waiter in waiters:
+					waiter.cancel()
+
 	def get_extra_info(self):
 		# for NTLM fingerprinting
 		ntlm_data = self.authapi.get_extra_info()
@@ -615,7 +686,7 @@ class RDPConnection:
 			ud_core.serverSelectedProtocol = self.x224_protocol
 			
 			ud_sec = TS_UD_CS_SEC()
-			ud_sec.encryptionMethods = ENCRYPTION_FLAG.FRENCH if self.x224_protocol is not SUPP_PROTOCOLS.RDP else ENCRYPTION_FLAG.BIT_128
+			ud_sec.encryptionMethods = ENCRYPTION_FLAG.FRENCH if self.x224_protocol is not SUPP_PROTOCOLS.RDP else ENCRYPTION_FLAG.BIT_40 | ENCRYPTION_FLAG.BIT_56 | ENCRYPTION_FLAG.BIT_128
 			ud_sec.extEncryptionMethods = ENCRYPTION_FLAG.FRENCH
 
 			ud_clust = TS_UD_CS_CLUSTER()
@@ -747,10 +818,8 @@ class RDPConnection:
 
 	async def __erect_domain(self):
 		try:
-			# the parser could not decode nor encode this data correctly.
-			# therefore we are sending these as bytes. it's static 
-			# (even according to docu)
-			await self._x224net.write(bytes.fromhex('0400010001'))
+			request = self._t125_per_codec.encode('DomainMCSPDU', ('erectDomainRequest', {'subHeight': 0, 'subInterval': 0}))
+			await self._x224net.write(bytes(request))
 			return True, None
 		except Exception as e:
 			return None, e
@@ -775,6 +844,18 @@ class RDPConnection:
 	
 	async def __join_channels(self):
 		try:
+			# MS-RDPBCGR 3.2.5.3.7: the user channel must be joined first.
+			# UserId is PER-encoded as an offset from 1001, so self._initiator holds that offset.
+			user_channel_id = self._initiator + 1001
+			joindata = self._t125_per_codec.encode('DomainMCSPDU', ('channelJoinRequest', {'initiator': self._initiator, 'channelId': user_channel_id}))
+			await self._x224net.write(bytes(joindata))
+			response = await self._x224net.read()
+			if response is None:
+				raise Exception('Connection closed!')
+			x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
+			if x[0] != 'channelJoinConfirm':
+				raise Exception('Could not join the user channel %s. Reason: %s' % (user_channel_id, x))
+
 			for name in self.__joined_channels:
 				joindata = self._t125_per_codec.encode('DomainMCSPDU', ('channelJoinRequest', {'initiator': self._initiator, 'channelId': self.__joined_channels[name].channel_id}))
 				await self._x224net.write(bytes(joindata))
@@ -796,7 +877,11 @@ class RDPConnection:
 	
 	async def __security_exchange(self):
 		try:
-			self.cryptolayer = RDPCryptoLayer(self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].serverRandom)
+			sc_sec = self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY]
+			keysize = ENCRYPTION_METHOD_KEYSIZE.get(sc_sec.encryptionMethod)
+			if keysize is None:
+				raise Exception('Server selected unsupported Standard RDP Security encryption method 0x%x' % sc_sec.encryptionMethod)
+			self.cryptolayer = RDPCryptoLayer(sc_sec.serverRandom, keysize=keysize)
 			enc_secret = self.__server_connect_pdu[TS_UD_TYPE.SC_SECURITY].serverCertificate.encrypt(self.cryptolayer.ClientRandom)
 			secexchange = TS_SECURITY_PACKET()
 			secexchange.encryptedClientRandom = enc_secret
@@ -858,6 +943,9 @@ class RDPConnection:
 					info.UserName = self.credentials.username
 				if self.credentials.secret is not None:
 					info.Password = self.credentials.secret
+			if info.Password and self.target.autologon:
+				info.flags |= INFO_FLAG.AUTOLOGON
+				self.__autologon_sent = True
 			info.AlternateShell = '' 
 			info.WorkingDir = ''
 			info.extrainfo = extinfo
@@ -1075,28 +1163,9 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(msg, sec_hdr, None, share_hdr, self.__joined_channels['MCS'].channel_id, False)
-			data, err = await self.__joined_channels['MCS'].out_queue.get()
-			if err is not None:
-				raise err
-			
-			data = data[data_start_offset:]
-			shc = TS_SHARECONTROLHEADER.from_bytes(data)
-			if shc.pduType == PDUTYPE.DATAPDU:
-				shd = TS_SHAREDATAHEADER.from_bytes(data)
-				if shd.pduType2 == PDUTYPE2.SET_ERROR_INFO_PDU:
-					# we got an error!
-					res = TS_SET_ERROR_INFO_PDU.from_bytes(data)
-					raise Exception('Server replied with error! Code: %s ErrName: %s' % (hex(res.errorInfoRaw), res.errorInfo.name))
 
-				elif shd.pduType2 == PDUTYPE2.SYNCHRONIZE:
-					# this is the expected data here
-					res = TS_SYNCHRONIZE_PDU.from_bytes(data)
-			
-				else:
-					raise Exception('Unexpected reply! %s' % shd.pduType2.name)
-			else:
-				raise Exception('Unexpected reply! %s' % shc.pduType.name)
-
+			# MS-RDPBCGR 3.2.5.3.13.2 - 3.2.5.3.18: the client finalization PDUs follow the
+			# Confirm Active PDU directly; some servers wait for them before sending their Synchronize.
 			data_hdr = TS_SHAREDATAHEADER()
 			data_hdr.shareID = 0x103EA
 			data_hdr.streamID = STREAM_TYPE.MED
@@ -1163,6 +1232,28 @@ class RDPConnection:
 				sec_hdr.flagsHi = 0
 
 			await self.handle_out_data(cli_font, sec_hdr, data_hdr, None, self.__joined_channels['MCS'].channel_id, False)
+
+			data, err = await self.__joined_channels['MCS'].out_queue.get()
+			if err is not None:
+				raise err
+			
+			data = data[data_start_offset:]
+			shc = TS_SHARECONTROLHEADER.from_bytes(data)
+			if shc.pduType == PDUTYPE.DATAPDU:
+				shd = TS_SHAREDATAHEADER.from_bytes(data)
+				if shd.pduType2 == PDUTYPE2.SET_ERROR_INFO_PDU:
+					# we got an error!
+					res = TS_SET_ERROR_INFO_PDU.from_bytes(data)
+					raise Exception('Server replied with error! Code: %s ErrName: %s' % (hex(res.errorInfoRaw), res.errorInfo.name))
+
+				elif shd.pduType2 == PDUTYPE2.SYNCHRONIZE:
+					# this is the expected data here
+					res = TS_SYNCHRONIZE_PDU.from_bytes(data)
+			
+				else:
+					raise Exception('Unexpected reply! %s' % shd.pduType2.name)
+			else:
+				raise Exception('Unexpected reply! %s' % shc.pduType.name)
 			
 			return True, None
 		except Exception as e:
@@ -1238,10 +1329,12 @@ class RDPConnection:
 				continue   # not a share data PDU at this offset
 			if shd.pduType2 == PDUTYPE2.SAVE_SESSION_INFO:
 				self.logon_info_received.set()
+				self.__logon_evt.set()
 			elif shd.pduType2 == PDUTYPE2.SET_ERROR_INFO_PDU:
 				err = TS_SET_ERROR_INFO_PDU.from_bytes(data[offset:])
 				if err.errorInfoRaw != 0:
 					self.logon_error = err.errorInfo
+					self.__logon_evt.set()
 					logger.debug('Set Error Info PDU: %s (%s)' % (hex(err.errorInfoRaw), err.errorInfo.name))
 			return
 
@@ -1254,13 +1347,16 @@ class RDPConnection:
 		try:
 			self.__connection.packetizer.packetizer_control("X224")
 			
-			async for is_fastpath, response in self.__connection.read():
+			async for packet in self.__connection.read():
 				#is_fastpath, response, err = await self._x224net.in_queue.get()
 				#if err is not None:
 				#	raise err
 
+				if packet is None:
+					raise ConnectionError('Server terminated the connection!')
+				is_fastpath, response = packet
 				if response is None:
-					raise Exception('Server terminated the connection!')
+					raise ConnectionError('Server terminated the connection!')
 				
 				if is_fastpath is False:
 					x = self._t125_per_codec.decode('DomainMCSPDU', response.data)
@@ -1354,7 +1450,9 @@ class RDPConnection:
 		except (ValueError, KeyError):
 			return False
 
+		self.logon_notifications.append(pdu)
 		self.logon_info_received.set()
+		self.__logon_evt.set()
 		await self.logon_info_queue.put(pdu)
 		return True
 
@@ -1692,8 +1790,9 @@ class RDPConnection:
 					datacontrol_hdr.shareControlHeader = TS_SHARECONTROLHEADER()
 					datacontrol_hdr.shareControlHeader.pduType = PDUTYPE.DATAPDU
 					datacontrol_hdr.shareControlHeader.pduSource = channel_id
-					datacontrol_hdr.shareControlHeader.totalLength = len(data) + 24
-					datacontrol_hdr.uncompressedLength = len(data) + 24 # since there is no compression implemented yet
+					# share control header (6) + share data header (12)
+					datacontrol_hdr.shareControlHeader.totalLength = len(data) + 18
+					datacontrol_hdr.uncompressedLength = len(data) + 18 # since there is no compression implemented yet
 					datacontrol_hdr.compressedType = 0
 					datacontrol_hdr.compressedLength = 0
 					hdrs += datacontrol_hdr.to_bytes()

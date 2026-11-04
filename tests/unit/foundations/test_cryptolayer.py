@@ -1,6 +1,9 @@
 """RDPCryptoLayer encrypt/decrypt and MAC with a fixed client random."""
 
+from hashlib import md5, sha1
+
 import pytest
+from arc4 import ARC4 as RC4
 
 from aardwolf.commons.cryptolayer import RDPCryptoLayer
 
@@ -44,6 +47,24 @@ def test_key_update_after_4096_packets(monkeypatch):
     layer.PacketCount = 4096
     layer.client_enc(b"x")
     assert layer.CurrentClientEncryptKey128 != first_key
+
+
+@pytest.mark.parametrize("keysize, salt", [(40, b"\xD1\x26\x9E"), (56, b"\xD1")])
+def test_short_key_update_follows_ms_rdpbcgr_5_3_7_1(monkeypatch, keysize, salt):
+    layer = make_layer(monkeypatch, keysize=keysize)
+    initial = getattr(layer, "InitialClientEncryptKey%d" % keysize)[:8]
+    current = getattr(layer, "CurrentClientEncryptKey%d" % keysize)[:8]
+    sha_component = sha1(initial + b"\x36" * 40 + current).digest()
+    temp_key64 = md5(initial + b"\x5C" * 48 + sha_component).digest()[:8]
+    pre_salt_key = RC4(temp_key64).encrypt(temp_key64)
+    expected = salt + pre_salt_key[len(salt):]
+
+    layer.PacketCount = 4096
+    ciphertext = layer.client_enc(b"payload")
+
+    new_key = getattr(layer, "CurrentClientEncryptKey%d" % keysize)
+    assert new_key == expected
+    assert ciphertext == RC4(expected).encrypt(b"payload")
 
 
 @pytest.mark.parametrize("keysize", [40, 56, 128])

@@ -20,7 +20,8 @@ pytestmark = [
 
 def _url(profile):
     password = quote(profile.password, safe="")
-    return "rdp://{username}:{password}@{host}:{port}".format(
+    # xrdp never confirms the autologon (no Save Session Info for Xorg sessions)
+    return "rdp://{username}:{password}@{host}:{port}/?autologon_confirm=0".format(
         username=profile.username,
         password=password,
         host=profile.host,

@@ -95,6 +95,24 @@ def test_virtual_channel_capability_without_chunk_size():
     assert parsed.capability.VCChunkSize is None
 
 
+def test_xrdp_bitmapcache_v3_codecid_capability_is_parsed_raw():
+    parsed = TS_CAPS_SET.from_bytes(bytes.fromhex("0600050000"))
+    assert parsed.capabilitySetType == CAPSTYPE.BITMAPCACHE_V3_CODECID
+    assert parsed.lengthCapability == 5
+    assert parsed.capabilityData == b"\x00"
+    assert parsed.capability is None
+
+
+def test_unknown_capability_type_is_kept_raw_and_round_trips():
+    wire = bytes.fromhex("99000800deadbeef")
+    parsed = TS_CAPS_SET.from_bytes(wire)
+    assert parsed.capabilitySetType.value == 0x99
+    assert parsed.capabilitySetType.name == "UNKNOWN_0x0099"
+    assert parsed.capabilityData == bytes.fromhex("deadbeef")
+    assert parsed.capability is None
+    assert parsed.to_bytes() == wire
+
+
 def test_multifragment_capability_round_trip():
     capability = TS_MULTIFRAGMENTUPDATE_CAPABILITYSET()
     capability.MaxRequestSize = 65535

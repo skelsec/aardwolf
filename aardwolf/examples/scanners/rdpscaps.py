@@ -48,6 +48,7 @@ class RDPCapabilitiesScanner:
 
 	
 	async def scan_flags(self, target, negflag, protoflag):
+		connection = None
 		try:
 			packetizer = TPKTPacketizer()
 			client = UniClient(target, packetizer)
@@ -69,6 +70,12 @@ class RDPCapabilitiesScanner:
 			return True, reply, None
 		except Exception as e:
 			return False, None, e
+		finally:
+			if connection is not None:
+				try:
+					await connection.close()
+				except Exception:
+					pass
 
 	async def run(self, targetid, target, out_queue):
 		try:

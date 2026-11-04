@@ -297,16 +297,28 @@ pub fn rle_32_decompress(
     height: u32,
     output: &mut [u8],
 ) -> RdpResult<()> {
+    // MS-RDPEGDI 2.2.2.5.1 planar FormatHeader: RLE (0x10) is required, NA (0x20)
+    // means the alpha plane is omitted. Color loss and chroma subsampling are not supported.
+    const PLANAR_RLE: u8 = 0x10;
+    const PLANAR_NA: u8 = 0x20;
+
     let mut input_cursor = Cursor::new(input);
 
-    if input_cursor.read_u8()? != 0x10 {
+    let header = input_cursor.read_u8()?;
+    if header & !PLANAR_NA != PLANAR_RLE {
         return Err(Error::RdpError(RdpError::new(
             RdpErrorKind::UnexpectedType,
             "Bad header",
         )));
     }
 
-    process_plane(&mut input_cursor, width, height, &mut output[3..])?;
+    if header & PLANAR_NA != 0 {
+        for alpha in output.iter_mut().skip(3).step_by(4) {
+            *alpha = 0xff;
+        }
+    } else {
+        process_plane(&mut input_cursor, width, height, &mut output[3..])?;
+    }
     process_plane(&mut input_cursor, width, height, &mut output[2..])?;
     process_plane(&mut input_cursor, width, height, &mut output[1..])?;
     process_plane(&mut input_cursor, width, height, &mut output[0..])?;
