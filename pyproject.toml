@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
 	"unicrypto>=0.0.11",
-	"asyauth>=0.0.24",
+	"asyauth>=0.0.25",
 	"asysocks>=0.2.11",
 	"tqdm",
 	"colorama",
