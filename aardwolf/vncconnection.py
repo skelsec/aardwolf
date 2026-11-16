@@ -308,8 +308,11 @@ class VNCConnection:
 				raise Exception('Invalid authentication type')
 			
 			elif self.__selected_security_type == 1:
-				# nothing to do here
 				logger.debug('Selecting NULL auth type')
+				# RFB 3.7+ (we always negotiate 3.8) requires the client to send
+				# its chosen security type byte even for the 'None' type. Without
+				# it the server keeps waiting and the handshake hangs forever.
+				await self.__writer.write(bytes([self.__selected_security_type]))
 
 			
 			elif self.__selected_security_type == 2:
